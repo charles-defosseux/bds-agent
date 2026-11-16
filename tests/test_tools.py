@@ -68,4 +68,4 @@ def test_untrusted_text_is_framed_and_cannot_close_its_frame():
 
 def test_model_sees_ask_user():
     names = [t["function"]["name"] for t in model_tools([{"name": "get_ledger", "description": "d", "input_schema": {}}])]
-    assert names == ["get_ledger", "ask_user"]
+    assert names == ["get_ledger", "ask_user", "remember_preference"]

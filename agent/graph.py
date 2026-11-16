@@ -1,12 +1,13 @@
 """The agent: one ReAct loop in a LangGraph StateGraph (session 3).
 
-    init -> think -> router -+-> read_tool -> think
+    init -> recall -> think -> router -+-> read_tool -> think
                              +-> guard -+-> approve -+-> write_tool -> think     (dangerous writes, group e-mails)
                              |          |            +-> think                   (rejected by the human)
                              |          +-> write_tool -> think                  (single e-mail that passed the guard)
                              |          +-> think                                (blocked by the guard)
                              +-> write_tool -> think                             (record_dues_payment: keyed, no approval)
                              +-> think                                           (the model sent unreadable arguments)
+                             +-> remember -> think                              (remember_preference, user's words only)
                              +-> ask_user -> END                                 (stop_reason = asked_user)
                              +-> give_up -> END                                  (stop_reason = max_steps)
                              +-> END                                             (final answer)
@@ -22,10 +23,11 @@ import threading
 from typing import Annotated, Callable, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.store.base import BaseStore
 from langgraph.types import Command, interrupt
 
 from agent import guard as guard_rules
-from agent import llm
+from agent import llm, memory
 from agent.config import DEFAULT_MAX_STEPS, DEFAULT_TREASURER
 from agent.mcp_client import McpClient
 from agent.prompts import SYSTEM
@@ -43,6 +45,7 @@ class AgentState(TypedDict):
     task: str
     max_steps: int
     steps: int                                         # model calls so far
+    facts: dict                                        # the user's saved preferences (recall)
     pending: dict                                      # the model's last decision: {"type": "final"|"call", ...}
     observations: Annotated[list, operator.add]        # what the model sees: {"tool", "args", "result"}
     tool_calls: Annotated[list, operator.add]          # every attempt, in order: {"tool", "args", "outcome", ...}
@@ -69,6 +72,8 @@ def router(state: AgentState) -> str:
     tool, args = pending["tool"], pending["args"]
     if tool == "ask_user":
         return "ask_user"
+    if tool == "remember_preference":
+        return "remember"
     if tool in GUARDED or needs_approval(tool, args):
         return "guard"
     if tool in WRITE_TOOLS:
@@ -163,8 +168,10 @@ def _short(value, n: int = 160) -> str:
 
 
 # ---- the graph -----------------------------------------------------------------------------------------------------------
-def build_graph(client: McpClient | None = None, chat: Callable | None = None, checkpointer=None):
-    """`client` and `chat` default to the real MCP servers and the real model; tests pass fakes."""
+def build_graph(client: McpClient | None = None, chat: Callable | None = None, checkpointer=None,
+                store: BaseStore | None = None):
+    """`client` and `chat` default to the real MCP servers and the real model; tests pass fakes. Studio provides its own
+    checkpointer and store (compile without)."""
     chat = chat or llm.chat
     mcp = (lambda: client) if client is not None else get_client
 
@@ -172,8 +179,14 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
         return {"max_steps": state.get("max_steps", DEFAULT_MAX_STEPS), "steps": 0, "pending": {}, "answer": None,
                 "status": "running", "stop_reason": None, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
 
+    def recall(state: AgentState, config, *, store: BaseStore | None = None) -> dict:
+        """Load the user's exact facts; they reach the model as a KNOWN FACTS block."""
+        return {"facts": memory.load(store, _ctx(config)["user_id"])}
+
     def think(state: AgentState, config) -> dict:
-        msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": state["task"]}]
+        block = memory.facts_block(state["facts"])
+        msgs = [{"role": "system", "content": f"{block}\n\n{SYSTEM}" if block else SYSTEM},
+                {"role": "user", "content": state["task"]}]
         for i, o in enumerate(state["observations"]):
             call = {"id": f"c{i}", "type": "function",
                     "function": {"name": o["tool"], "arguments": json.dumps(o["args"], ensure_ascii=False)}}
@@ -200,6 +213,8 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
                     "observations": [{"tool": call["name"], "args": {}, "result": result}],
                     "tool_calls": [{"tool": call["name"], "args": {}, "outcome": "invalid_arguments"}],
                     "transcript": [f"[{n}] {call['name']}(<unreadable arguments>)"]}
+        if call["name"] == "send_email":
+            args = memory.apply_signature(args, state["facts"])
         return {**usage, "pending": {"type": "call", "tool": call["name"], "args": args},
                 "transcript": [f"[{n}] {call['name']}({_short(args)})"]}
 
@@ -252,7 +267,7 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
                 "tool_calls": [{"tool": tool, "args": args, "outcome": "not_run",
                                 "error_code": lookup_error["error"]["code"]}],
                 "transcript": [f"      -> not run: {_short(lookup_error)}"]})
-        reason = guard_rules.check(state["task"], tool, args, facts)
+        reason = guard_rules.check(state["task"], tool, args, facts, state["facts"])
         if reason:
             result = error("permission_denied", f"Blocked by the harness guard: {reason}",
                            "Do not retry this call. Do only what the user asked; if you need something from the user, "
@@ -281,6 +296,27 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
                             "reason": decision["reason"]}],
             "transcript": [f"      -> REJECTED by the human: {decision['reason']}"]})
 
+    def remember(state: AgentState, config, *, store: BaseStore | None = None) -> dict:
+        """remember_preference: only the user's words write (memory.check_remember); the model reads the outcome."""
+        args = state["pending"]["args"]
+        key, value = str(args.get("key", "")), str(args.get("value", ""))
+        problem = memory.check_remember(state["task"], key, value)
+        if problem is None and store is None:
+            problem = ("internal", "No memory store is available.", "Tell the user the preference was not saved.")
+        if problem:
+            code, message, hint = problem
+            result, outcome = error(code, message, hint), "blocked_by_guard" if code == "permission_denied" else "error"
+            attempt = {"tool": "remember_preference", "args": args, "outcome": outcome, "error_code": code}
+        else:
+            memory.upsert(store, _ctx(config)["user_id"], key, value)
+            result = {"ok": True, "data": {"key": key, "value": value, "saved": True}}
+            attempt = {"tool": "remember_preference", "args": args, "outcome": "ok"}
+        update = {"observations": [{"tool": "remember_preference", "args": args, "result": result}],
+                  "tool_calls": [attempt], "transcript": [f"      -> {_short(result)}"]}
+        if not problem:
+            update["facts"] = {**state["facts"], key: value}
+        return update
+
     def ask_user(state: AgentState) -> dict:
         args = state["pending"]["args"]
         question = str(args.get("question", ""))
@@ -293,16 +329,18 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
                 "transcript": [f"[stopped: budget of {state['max_steps']} tool calls reached]"]}
 
     g = StateGraph(AgentState, input_schema=Input)
-    for name, fn in [("init", init), ("think", think), ("read_tool", run_tool), ("write_tool", run_tool),
-                     ("ask_user", ask_user), ("give_up", give_up)]:
+    for name, fn in [("init", init), ("recall", recall), ("think", think), ("read_tool", run_tool), ("write_tool", run_tool),
+                     ("remember", remember), ("ask_user", ask_user), ("give_up", give_up)]:
         g.add_node(name, fn)
     g.add_node("guard", guard, destinations=("approve", "write_tool", "think"))
     g.add_node("approve", approve, destinations=("write_tool", "think"))
     g.add_edge(START, "init")
-    g.add_edge("init", "think")
-    g.add_conditional_edges("think", router, ["read_tool", "guard", "write_tool", "ask_user", "give_up", "think", END])
+    g.add_edge("init", "recall")
+    g.add_edge("recall", "think")
+    g.add_conditional_edges("think", router, ["read_tool", "guard", "write_tool", "remember", "ask_user", "give_up", "think", END])
     g.add_edge("read_tool", "think")
     g.add_edge("write_tool", "think")
+    g.add_edge("remember", "think")
     g.add_edge("ask_user", END)
     g.add_edge("give_up", END)
-    return g.compile(checkpointer=checkpointer)
+    return g.compile(checkpointer=checkpointer, store=store)

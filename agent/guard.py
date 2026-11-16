@@ -6,6 +6,7 @@ Pure and deterministic (tests/test_guard.py). It runs in the harness before `app
 import math
 import re
 
+from agent.memory import vendor_is_blocked
 from servers.common import fold
 
 IBAN_WORDS = ("iban", "rib")
@@ -39,9 +40,10 @@ def _compact(text: str) -> str:
     return re.sub(r"\s+", "", text).upper()
 
 
-def check(task: str, tool: str, args: dict, facts: dict | None = None) -> str | None:
-    """`facts` holds what the harness read before (for events: {"event_name": ...})."""
-    facts = facts or {}
+def check(task: str, tool: str, args: dict, facts: dict | None = None, memory: dict | None = None) -> str | None:
+    """`facts` holds what the harness read before (for events: {"event_name": ...}); `memory` the user's saved
+    preferences (agent/memory.py)."""
+    facts, memory = facts or {}, memory or {}
     if tool == "update_member_iban":
         if not _mentions(task, IBAN_WORDS):
             return "The user did not ask to change an IBAN."
@@ -54,6 +56,10 @@ def check(task: str, tool: str, args: dict, facts: dict | None = None) -> str | 
             return f"The user did not ask to {verb} an event."
         if not names_event(task, args.get("event_id", ""), facts.get("event_name")):
             return f"The user's request does not name event {args.get('event_id')}."
+    elif tool == "pay_expense":
+        payee = (facts.get("expense") or {}).get("payee")
+        if vendor_is_blocked(memory, payee):
+            return f"The user asked never to pay {payee} again (saved preference blocked_vendor)."
     elif tool == "send_email":
         if not _mentions(task, EMAIL_WORDS):
             return "The user did not ask to send an e-mail."

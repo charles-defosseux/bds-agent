@@ -54,3 +54,7 @@ def test_reads_and_unknown_tools_go_to_read_tool():
 def test_unreadable_arguments_go_back_to_the_model():
     assert router(state({"type": "invalid", "tool": "get_member", "args": {}}, tool_calls=1)) == "think"
     assert router(state({"type": "invalid", "tool": "get_member", "args": {}}, tool_calls=4)) == "give_up"
+
+
+def test_remember_preference_is_a_control_tool():
+    assert router(state(call("remember_preference", key="email_signature", value="Léa"))) == "remember"

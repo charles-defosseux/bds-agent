@@ -6,6 +6,8 @@ import json
 
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_random_exponential
 
+from agent.memory import REMEMBER_SPEC
+
 READ_TOOLS = {"search_members", "get_member", "list_events", "get_event", "list_expenses", "get_expense",
               "get_section_budget", "get_ledger"}
 KEYED_TOOLS = {"send_email", "record_dues_payment", "pay_expense", "reimburse_member", "refund_event_registrations"}
@@ -13,7 +15,7 @@ UNKEYED_WRITES = {"cancel_event", "update_member_iban"}  # dangerous, no key: ne
 WRITE_TOOLS = KEYED_TOOLS | UNKEYED_WRITES
 ALWAYS_APPROVE = {"pay_expense", "reimburse_member", "refund_event_registrations", "cancel_event", "update_member_iban"}
 GUARDED = {"update_member_iban", "cancel_event", "refund_event_registrations", "send_email"}  # agent/guard.py
-CONTROL_TOOLS = {"ask_user"}
+CONTROL_TOOLS = {"ask_user", "remember_preference"}
 
 RETRY_ATTEMPTS = 3
 RETRY_WAIT = wait_random_exponential(multiplier=0.2, max=2)  # backoff + jitter, as in the lab 2 dispatcher
@@ -44,7 +46,7 @@ def model_tools(mcp_tools: list[dict]) -> list[dict]:
     """OpenAI function specs: the MCP tools (hidden arguments already removed by the client) + the control tools."""
     specs = [{"type": "function", "function": {"name": t["name"], "description": t["description"],
                                                "parameters": t["input_schema"]}} for t in mcp_tools]
-    return specs + [ASK_USER_SPEC]
+    return specs + [ASK_USER_SPEC, REMEMBER_SPEC]
 
 
 def error(code: str, message: str, hint: str, retryable: bool = False) -> dict:
