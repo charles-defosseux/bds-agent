@@ -1,0 +1,23 @@
+# Course material: local copy, never committed
+reference/
+
+# Secrets
+.env
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Runtime data (SQLite backend, checkpoints, memory store)
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# LangGraph dev server
+.langgraph_api/
+
+# macOS
+.DS_Store
