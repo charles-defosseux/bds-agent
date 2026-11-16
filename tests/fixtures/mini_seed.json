@@ -1,0 +1,25 @@
+{
+  "sections": [
+    {"name": "football", "budget_remaining_eur": 1000},
+    {"name": "tennis", "budget_remaining_eur": 500},
+    {"name": "padel", "budget_remaining_eur": 250},
+    {"name": "voile", "budget_remaining_eur": 80}
+  ],
+  "members": [
+    {"id": "M001", "name": "Léa Martin", "email": "lea.martin@bds.example", "section": "voile", "role": "treasurer", "dues_paid": 1, "iban": "FR7630004000010000123456789"},
+    {"id": "M002", "name": "Hugo Bernard", "email": "hugo.bernard@bds.example", "section": "football", "role": "member", "dues_paid": 0, "iban": "FR9620041010050500013002606"}
+  ],
+  "events": [
+    {"id": "EV01", "name": "Tournoi de padel", "section": "padel", "date": "2026-12-05", "price_eur": 15, "status": "active", "description": "Tournoi amical."}
+  ],
+  "registrations": [
+    {"event_id": "EV01", "member_id": "M002", "status": "registered", "amount_paid_eur": 15}
+  ],
+  "expenses": [
+    {"id": "E-001", "type": "vendor_invoice", "section": "voile", "payee": "Voiles Atlantique", "vendor_iban": "FR2830003000200005000800011", "amount_eur": 60, "status": "validated", "has_receipt": 1, "president_approved": 0, "vendor_blocked": 0, "note": ""}
+  ],
+  "ledger": [
+    {"type": "dues", "amount_eur": 30, "reference": "M001", "idempotency_key": "seed-1", "actor_id": "M001"}
+  ],
+  "outbox": []
+}

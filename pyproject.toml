@@ -1,0 +1,27 @@
+[project]
+name = "bds-agent"
+version = "0.1.0"
+description = "BDS treasury agent: one LangGraph ReAct agent, two MCP servers, SQLite backend, eval harness."
+readme = "README.md"
+requires-python = ">=3.12"
+# Versions aligned on the course lab (reference/agentic-workflow-lab/uv.lock).
+dependencies = [
+    "langgraph==1.2.16",
+    "langgraph-checkpoint-sqlite==3.1.2",
+    "langgraph-cli[inmem]==0.4.36",
+    "mcp[cli]==2.3.0",
+    "arize-phoenix==21.0.0",
+    "arize-phoenix-otel==0.17.3",
+    "openai==3.31.0",
+    "openinference-instrumentation-openai==0.1.73",
+    "pydantic==2.14.1",
+    "python-dotenv==1.2.4",
+    "tenacity==9.1.4",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

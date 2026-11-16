@@ -18,6 +18,7 @@ flowchart LR
     G --> O[OpenRouter<br/>client OpenAI]
 ```
 
+- **Montants** : `REAL` en euros, arrondis à 2 décimales (demi vers le haut) à chaque écriture via l'unique helper `backend/money.py::round_eur` (reset, outils). **Le scorer doit comparer les montants arrondis à 2 décimales** (`round_eur` des deux côtés), jamais en égalité de flottants bruts.
 - **Backend** : une base SQLite (`data/bds.db`, chemin via `BDS_DB_PATH`). Chaque appel d'outil ouvre sa connexion ⇒ un `reset(seed)` est vu immédiatement par les serveurs déjà lancés.
 - **Deux serveurs MCP en stdio**, SDK et style du lab 2 (`MCPServer`, `ToolAnnotations`, erreurs typées). Choix stdio : rien à lancer à côté, le harness possède les process des serveurs (comme `HarnessServer` du lab 2), et l'MCP Inspector se branche sur la même commande. À justifier dans le README.
 - **Client MCP synchrone** (`agent/mcp_client.py`) : boucle asyncio en arrière-plan, lance les 2 serveurs une fois par process, expose `list_tools()` (sans les arguments cachés) et `call(tool, args, ctx)`. **Testé seul en phase 3, avant le graphe.**
