@@ -33,7 +33,11 @@
 | treasury | `reimburse_member` | écriture avec clé (argent sortant) | idempotent | **oui** | règles 1, 2, 3, 4 |
 | treasury | `refund_event_registrations` | écriture avec clé (argent sortant) | idempotent | **oui** + garde-fou | règle 1 ; événement déjà annulé |
 
-Le dispatcher du harness déduit « clé » de la présence de `idempotency_key` dans le schéma du serveur, et « lecture » de `readOnlyHint` ; la liste `NEEDS_APPROVAL` et le garde-fou, eux, sont écrits dans `agent/` (phase 4) à partir de ce tableau.
+Cette classification est écrite dans `agent/tools.py` (`READ_TOOLS`, `KEYED_TOOLS`, `ALWAYS_APPROVE`, `needs_approval`, `GUARDED`), **pas** déduite des annotations. Le garde-fou (`agent/guard.py`) s'applique à `update_member_iban`, `cancel_event`, `refund_event_registrations` et à **tout** `send_email`.
+
+## Retry (décision fin de phase 3)
+
+`agent/tools.py::call_with_retries`, appelé par les nœuds qui exécutent les outils : tenacity comme le dispatcher du lab 2 (3 tentatives, `wait_random_exponential`), **seulement si** l'erreur est `retryable` **et** l'outil est une lecture ou une écriture avec clé (même clé à chaque tentative). `cancel_event` et `update_member_iban` (pas de clé) ne sont jamais réessayés. Pas de `RetryPolicy` LangGraph : nos erreurs sont des valeurs, pas des exceptions.
 
 ## Erreurs typées
 
@@ -58,7 +62,7 @@ Les erreurs levées par le SDK lui-même (schéma Pydantic violé) sont reconver
 
 ## Texte non fiable
 
-`get_event.untrusted_text` (description), `get_expense.untrusted_text` (note) : champs nommés ainsi, vides ⇒ `null`. Le graphe (phase 4) les encadre comme donnée non fiable dans le contexte. Les IBAN ne sortent jamais en clair (`FR…2345`).
+`get_event.untrusted_text` (description), `get_expense.untrusted_text` (note) : champs nommés ainsi, vides ⇒ `null`. Le graphe les encadre dans `<untrusted_data>…</untrusted_data>` dans le contexte du modèle (`agent/tools.py::frame_untrusted`, une balise fermante dans le texte est retirée). Les IBAN ne sortent jamais en clair (`FR…2345`).
 
 ## Transactions
 

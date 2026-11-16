@@ -1,0 +1,308 @@
+"""The agent: one ReAct loop in a LangGraph StateGraph (session 3).
+
+    init -> think -> router -+-> read_tool -> think
+                             +-> guard -+-> approve -+-> write_tool -> think     (dangerous writes, group e-mails)
+                             |          |            +-> think                   (rejected by the human)
+                             |          +-> write_tool -> think                  (single e-mail that passed the guard)
+                             |          +-> think                                (blocked by the guard)
+                             +-> write_tool -> think                             (record_dues_payment: keyed, no approval)
+                             +-> think                                           (the model sent unreadable arguments)
+                             +-> ask_user -> END                                 (stop_reason = asked_user)
+                             +-> give_up -> END                                  (stop_reason = max_steps)
+                             +-> END                                             (final answer)
+
+Budget: `max_steps` = number of tool-call attempts (the lab 6 scorer counts the same); model calls are bounded by the
+same value (+1 for the final answer). `recursion_limit` in the config is the safety net (agent/config.py::run_config).
+The history is rebuilt from `observations` at every model call: the checkpoint is all the memory a run has.
+"""
+import atexit
+import json
+import operator
+import threading
+from typing import Annotated, Callable, NotRequired, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
+
+from agent import guard as guard_rules
+from agent import llm
+from agent.config import DEFAULT_MAX_STEPS, DEFAULT_TREASURER
+from agent.mcp_client import McpClient
+from agent.prompts import SYSTEM
+from agent.tools import (GUARDED, WRITE_TOOLS, call_with_retries, error, model_tools, needs_approval,
+                         result_for_model)
+from backend.money import round_eur
+
+
+class Input(TypedDict):
+    task: str
+    max_steps: NotRequired[int]
+
+
+class AgentState(TypedDict):
+    task: str
+    max_steps: int
+    steps: int                                         # model calls so far
+    pending: dict                                      # the model's last decision: {"type": "final"|"call", ...}
+    observations: Annotated[list, operator.add]        # what the model sees: {"tool", "args", "result"}
+    tool_calls: Annotated[list, operator.add]          # every attempt, in order: {"tool", "args", "outcome", ...}
+    transcript: Annotated[list[str], operator.add]     # human-readable log
+    answer: str | None
+    status: str                                        # running | done
+    stop_reason: str | None                            # final_answer | asked_user | max_steps
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+
+
+# ---- pure helpers (tested without a model) ----------------------------------------------------------------------------
+def router(state: AgentState) -> str:
+    """Course order: final answer => END; budget reached => give_up (even for a write); control tool; dangerous write
+    => guard (then approve); other write => write_tool; otherwise read_tool."""
+    pending = state["pending"]
+    if pending["type"] == "final":
+        return END
+    if len(state["tool_calls"]) >= state["max_steps"] or state["steps"] > state["max_steps"]:
+        return "give_up"
+    if pending["type"] == "invalid":
+        return "think"
+    tool, args = pending["tool"], pending["args"]
+    if tool == "ask_user":
+        return "ask_user"
+    if tool in GUARDED or needs_approval(tool, args):
+        return "guard"
+    if tool in WRITE_TOOLS:
+        return "write_tool"
+    return "read_tool"  # reads, and unknown names (the client answers not_found without calling anything)
+
+
+def as_decision(value) -> dict:
+    """The human's answer: {"approve": bool, "reason": str}. Studio's resume box may send text (lab 3 helper)."""
+    if isinstance(value, dict):
+        return {"approve": bool(value.get("approve")), "reason": str(value.get("reason", ""))}
+    text = str(value).strip()
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return as_decision(parsed)
+        text = str(parsed)
+    except ValueError:
+        pass
+    return {"approve": text.lower() in {"true", "yes", "y", "ok", "oui", "approve"}, "reason": text}
+
+
+def approval_payload(tool: str, args: dict, facts: dict) -> dict:
+    """What the human reads before deciding (in French, the treasurer's language)."""
+    p = {"tool": tool, "args": args, "action": "", "amount_eur": None, "beneficiary": None, "section": None,
+         "rule": "", "irreversible": ""}
+    if tool in ("pay_expense", "reimburse_member"):
+        e = facts.get("expense", {})
+        kind = "Payer la facture" if tool == "pay_expense" else "Rembourser la note de frais"
+        p.update(action=f"{kind} {args.get('expense_id')}", amount_eur=e.get("amount_eur"),
+                 beneficiary=facts.get("beneficiary") or e.get("payee"), section=e.get("section"),
+                 rule="Règle 2 (validation humaine ; au-delà de 300 €, accord du président). L'outil vérifie aussi "
+                      "les règles 1 (budget), 3 (justificatif), 4 (jamais deux fois) et 5 (prestataire bloqué).",
+                 irreversible="L'argent sort du budget de la section ; un paiement ne s'annule pas.")
+    elif tool == "refund_event_registrations":
+        p.update(action=f"Rembourser les {facts.get('registered_count')} inscrits de « {facts.get('event_name')} » "
+                        f"({args.get('event_id')})",
+                 amount_eur=facts.get("total_collected_eur"), beneficiary="les inscrits de l'événement",
+                 section=facts.get("section"), rule="Règle 2 (validation humaine) et règle 1 (budget de section).",
+                 irreversible="L'argent sort du budget de la section ; les remboursements ne s'annulent pas.")
+    elif tool == "cancel_event":
+        p.update(action=f"Annuler « {facts.get('event_name')} » ({args.get('event_id')}, {facts.get('date')})",
+                 beneficiary=f"{facts.get('registered_count')} inscrits", section=facts.get("section"),
+                 rule="Annulation demandée par l'utilisateur (garde-fou) ; ne rembourse ni ne prévient personne.",
+                 irreversible="Un événement annulé ne peut pas être rétabli.")
+    elif tool == "update_member_iban":
+        p.update(action=f"Remplacer l'IBAN de {facts.get('member_name')} ({args.get('member_id')})",
+                 beneficiary=facts.get("member_name"), section=facts.get("section"),
+                 rule="Règle 6 : IBAN modifié seulement sur demande explicite de l'utilisateur.",
+                 irreversible=f"L'ancien IBAN ({facts.get('old_iban_masked')}) est écrasé ; les prochains "
+                              "remboursements iront sur le nouveau compte.")
+        p["args"] = {**args, "new_iban": _mask(args.get("new_iban", ""))}
+    elif tool == "send_email":
+        n = len(set(args.get("recipient_member_ids") or []))
+        p.update(action=f"Envoyer l'e-mail « {args.get('subject')} » à {n} membres", beneficiary=f"{n} membres",
+                 rule="Règle 2 : un e-mail groupé passe par une validation humaine.",
+                 irreversible="Un e-mail envoyé ne peut pas être rappelé.")
+    if p["amount_eur"] is not None:
+        p["amount_eur"] = round_eur(p["amount_eur"])
+    return p
+
+
+def _mask(iban: str) -> str:
+    iban = iban.replace(" ", "")
+    return f"{iban[:2]}…{iban[-4:]}" if len(iban) > 6 else iban
+
+
+# ---- the MCP client of this process ------------------------------------------------------------------------------------
+_client: McpClient | None = None
+_client_lock = threading.Lock()
+
+
+def get_client() -> McpClient:
+    """Both stdio servers, started once per process (Studio, scripts, eval)."""
+    global _client
+    with _client_lock:
+        if _client is None:
+            _client = McpClient().start()
+            atexit.register(_client.close)
+        return _client
+
+
+def _ctx(config) -> dict:
+    """Harness context: the run's thread and the treasurer. Never chosen by the model."""
+    c = config.get("configurable", {})
+    return {"thread_id": c["thread_id"], "user_id": c.get("user_id") or DEFAULT_TREASURER}
+
+
+def _short(value, n: int = 160) -> str:
+    text = json.dumps(value, ensure_ascii=False)
+    return text if len(text) <= n else text[:n] + "…"
+
+
+# ---- the graph -----------------------------------------------------------------------------------------------------------
+def build_graph(client: McpClient | None = None, chat: Callable | None = None, checkpointer=None):
+    """`client` and `chat` default to the real MCP servers and the real model; tests pass fakes."""
+    chat = chat or llm.chat
+    mcp = (lambda: client) if client is not None else get_client
+
+    def init(state: Input) -> dict:
+        return {"max_steps": state.get("max_steps", DEFAULT_MAX_STEPS), "steps": 0, "pending": {}, "answer": None,
+                "status": "running", "stop_reason": None, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
+
+    def think(state: AgentState, config) -> dict:
+        msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": state["task"]}]
+        for i, o in enumerate(state["observations"]):
+            call = {"id": f"c{i}", "type": "function",
+                    "function": {"name": o["tool"], "arguments": json.dumps(o["args"], ensure_ascii=False)}}
+            msgs += [{"role": "assistant", "content": None, "tool_calls": [call]},
+                     {"role": "tool", "tool_call_id": f"c{i}", "content": result_for_model(o["result"])}]
+        reply = chat(msgs, model_tools(mcp().list_tools()), config.get("configurable", {}).get("model"))
+        n = state["steps"] + 1
+        usage = {"steps": n, "tokens_in": state["tokens_in"] + reply["tokens_in"],
+                 "tokens_out": state["tokens_out"] + reply["tokens_out"],
+                 "cost_usd": state["cost_usd"] + reply["cost_usd"]}
+        if not reply["tool_calls"]:
+            return {**usage, "pending": {"type": "final"}, "answer": reply["content"], "status": "done",
+                    "stop_reason": "final_answer", "transcript": [f"[{n}] answer: {reply['content']}"]}
+        call = reply["tool_calls"][0]  # one tool call per step, even if the model sends several
+        try:
+            args = json.loads(call["arguments"] or "{}")
+            if not isinstance(args, dict):
+                raise ValueError("arguments must be a JSON object")
+        except ValueError as e:
+            # Nothing runs; the attempt counts in the budget and the model reads the error.
+            result = error("invalid_argument", f"Unreadable arguments for {call['name']}: {e}.",
+                           "Send the arguments as one JSON object matching the tool schema.")
+            return {**usage, "pending": {"type": "invalid", "tool": call["name"], "args": {}},
+                    "observations": [{"tool": call["name"], "args": {}, "result": result}],
+                    "tool_calls": [{"tool": call["name"], "args": {}, "outcome": "invalid_arguments"}],
+                    "transcript": [f"[{n}] {call['name']}(<unreadable arguments>)"]}
+        return {**usage, "pending": {"type": "call", "tool": call["name"], "args": args},
+                "transcript": [f"[{n}] {call['name']}({_short(args)})"]}
+
+    def run_tool(state: AgentState, config) -> dict:
+        tool, args = state["pending"]["tool"], state["pending"]["args"]
+        result = call_with_retries(mcp(), tool, args, _ctx(config))
+        attempt = {"tool": tool, "args": args, "outcome": "ok" if result["ok"] else "error"}
+        if not result["ok"]:
+            attempt["error_code"] = result["error"]["code"]
+        if state["pending"].get("approved"):
+            attempt["approved"] = True
+        return {"observations": [{"tool": tool, "args": args, "result": result}], "tool_calls": [attempt],
+                "transcript": [f"      -> {_short(result)}"]}
+
+    def _lookup(tool: str, args: dict, ctx: dict) -> tuple[dict, dict | None]:
+        """Read what the guard and the human need (side-effect free). Returns (facts, error result or None)."""
+        def read(name, a):
+            return call_with_retries(mcp(), name, a, ctx)
+        if tool in ("pay_expense", "reimburse_member"):
+            r = read("get_expense", {"expense_id": args.get("expense_id", "")})
+            if not r["ok"]:
+                return {}, r
+            facts = {"expense": r["data"]}
+            if tool == "reimburse_member":
+                m = read("get_member", {"member_id": r["data"]["payee"]})
+                facts["beneficiary"] = f"{m['data']['name']} ({r['data']['payee']})" if m["ok"] else r["data"]["payee"]
+            return facts, None
+        if tool in ("cancel_event", "refund_event_registrations"):
+            r = read("get_event", {"event_id": args.get("event_id", "")})
+            if not r["ok"]:
+                return {}, r
+            d = r["data"]
+            return {"event_name": d["name"], "date": d["date"], "section": d["section"],
+                    "registered_count": d["registered_count"], "total_collected_eur": d["total_collected_eur"]}, None
+        if tool == "update_member_iban":
+            r = read("get_member", {"member_id": args.get("member_id", "")})
+            if not r["ok"]:
+                return {}, r
+            d = r["data"]
+            return {"member_name": d["name"], "section": d["section"], "old_iban_masked": d["iban_masked"]}, None
+        return {}, None
+
+    def guard(state: AgentState, config) -> Command:
+        """Deterministic anti-injection check, then approval if needed. Only reads here: nothing changes."""
+        tool, args = state["pending"]["tool"], state["pending"]["args"]
+        facts, lookup_error = _lookup(tool, args, _ctx(config))
+        if lookup_error:
+            return Command(goto="think", update={
+                "observations": [{"tool": tool, "args": args, "result": lookup_error}],
+                "tool_calls": [{"tool": tool, "args": args, "outcome": "not_run",
+                                "error_code": lookup_error["error"]["code"]}],
+                "transcript": [f"      -> not run: {_short(lookup_error)}"]})
+        reason = guard_rules.check(state["task"], tool, args, facts)
+        if reason:
+            result = error("permission_denied", f"Blocked by the harness guard: {reason}",
+                           "Do not retry this call. Do only what the user asked; if you need something from the user, "
+                           "use ask_user.")
+            return Command(goto="think", update={
+                "observations": [{"tool": tool, "args": args, "result": result}],
+                "tool_calls": [{"tool": tool, "args": args, "outcome": "blocked_by_guard", "reason": reason}],
+                "transcript": [f"      -> BLOCKED by the guard: {reason}"]})
+        if needs_approval(tool, args):
+            return Command(goto="approve", update={"pending": {**state["pending"],
+                                                               "approval": approval_payload(tool, args, facts)}})
+        return Command(goto="write_tool")
+
+    def approve(state: AgentState) -> Command:
+        """Human in the loop. No side effect before interrupt(): the node restarts from the top when resumed."""
+        pending = state["pending"]
+        decision = as_decision(interrupt(pending["approval"]))
+        if decision["approve"]:
+            return Command(goto="write_tool", update={"pending": {**pending, "approved": True},
+                                                      "transcript": ["      approved by the human"]})
+        result = error("permission_denied", f"Rejected by the human reviewer: {decision['reason'] or 'no reason given'}",
+                       "Do not retry this call. Tell the user it was refused.")
+        return Command(goto="think", update={
+            "observations": [{"tool": pending["tool"], "args": pending["args"], "result": result}],
+            "tool_calls": [{"tool": pending["tool"], "args": pending["args"], "outcome": "rejected_by_human",
+                            "reason": decision["reason"]}],
+            "transcript": [f"      -> REJECTED by the human: {decision['reason']}"]})
+
+    def ask_user(state: AgentState) -> dict:
+        args = state["pending"]["args"]
+        question = str(args.get("question", ""))
+        return {"answer": question, "status": "done", "stop_reason": "asked_user",
+                "tool_calls": [{"tool": "ask_user", "args": args, "outcome": "ok"}],
+                "transcript": [f"      -> question for the user: {question}"]}
+
+    def give_up(state: AgentState) -> dict:
+        return {"answer": None, "status": "done", "stop_reason": "max_steps",
+                "transcript": [f"[stopped: budget of {state['max_steps']} tool calls reached]"]}
+
+    g = StateGraph(AgentState, input_schema=Input)
+    for name, fn in [("init", init), ("think", think), ("read_tool", run_tool), ("write_tool", run_tool),
+                     ("ask_user", ask_user), ("give_up", give_up)]:
+        g.add_node(name, fn)
+    g.add_node("guard", guard, destinations=("approve", "write_tool", "think"))
+    g.add_node("approve", approve, destinations=("write_tool", "think"))
+    g.add_edge(START, "init")
+    g.add_edge("init", "think")
+    g.add_conditional_edges("think", router, ["read_tool", "guard", "write_tool", "ask_user", "give_up", "think", END])
+    g.add_edge("read_tool", "think")
+    g.add_edge("write_tool", "think")
+    g.add_edge("ask_user", END)
+    g.add_edge("give_up", END)
+    return g.compile(checkpointer=checkpointer)
