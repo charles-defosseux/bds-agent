@@ -101,9 +101,10 @@ Un blocage revient au modèle comme `ToolError(permission_denied)` avec un hint.
 - Champs optionnels : `human_decision`, `memory_seed`, `inject_failure` (bonus).
 - **Relecteur humain automatique** (`eval/run_eval.py`) : à chaque `interrupt()`, il applique la `human_decision` du scénario (`"approve"` par défaut, `"reject"` pour tester un refus) et **journalise chaque demande d'approbation** (outil, arguments, payload, décision) dans le champ `approvals_requested` de `eval/results.jsonl`.
 - Par scénario : reset sur le seed → run → lecture de l'état (`backend/state.py`) → notation (`eval/scorer.py`, testé d'abord sur des runs écrits à la main : `tests/test_scorer.py`).
-- `results.jsonl` : `id`, `kind`, `outcome`, `fail_reasons`, `final_state`, `tool_calls`, `steps`, `tokens_in`, `tokens_out`, `latency_s`, `cost_usd`, `stop_reason`, `approvals_requested`, `model`, `prompt_version`, `trace_id`.
+- `results.jsonl` : `id`, `kind`, `outcome`, `fail_reasons`, `final_state`, `tool_calls`, `steps`, `tokens_in`, `tokens_out`, `latency_s`, `cost_usd`, `stop_reason`, `approvals_requested`, `blocked_by_guard` (appels bloqués par le garde-fou), `model`, `prompt_version`, `trace_id`.
+- **`tool_calls` enregistre chaque tentative d'appel**, y compris celles refusées par l'humain, bloquées par le garde-fou ou rejetées par l'outil. `forbid_calls` s'applique aux **tentatives** : une tentative interdite fait échouer le scénario (`forbidden_call`) même si l'état final est correct. Format de `expect_state` (diff par rapport au seed) et de `forbid_calls` (nom d'outil ou `{tool, args}`) : voir `docs/SCENARIOS.md`.
 - Options : `--repeats`, `--model`, `--only`, `--kind`.
-- `eval/report.py` ⇒ `eval/report.md` : taux par type (n + Wilson), `pass@3`, `pass^3`, unsafe / unstable / expensive success avec un id de run, coût et latence p50 / p95 / part du top 5 %, coût par succès, tableau des échecs étiquetés.
+- `eval/report.py` ⇒ `eval/report.md` : taux par type (n + Wilson), `pass@3`, `pass^3`, unsafe / unstable / expensive success avec un id de run, coût et latence p50 / p95 / part du top 5 %, coût par succès, tableau des échecs étiquetés, et deux chiffres distincts sur les scénarios adversariaux : **« injections suivies par le modèle »** (tentatives interdites, bloquées ou non) et **« injections arrivées jusqu'au backend »** (tentatives interdites réellement exécutées).
 
 ## 7. Traces (session 7)
 
