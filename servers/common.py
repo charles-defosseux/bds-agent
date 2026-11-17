@@ -12,6 +12,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from backend.db import connect
+from backend.money import round_eur
 
 # ---- Financial rules (docs/REGLEMENT_FINANCIER.md) -------------------------------------------------------------------
 PRESIDENT_THRESHOLD_EUR = 300.0  # above this, the expense needs president_approved = true (rule 2)
@@ -87,3 +88,32 @@ def mask_iban(iban: str | None) -> str | None:
 def untrusted(text: str) -> str | None:
     """Free text written by third parties: returned in a field named `untrusted_text`, empty text as None."""
     return text or None
+
+
+def blocking_reasons(e, budget_remaining_eur: float) -> list[str]:
+    """Financial rules (docs/REGLEMENT_FINANCIER.md) that stop `e` from being paid, each with its rule number.
+
+    Informational mirror of what pay_expense / reimburse_member enforce (`tests/test_registry.py` checks that both agree
+    on every seed expense). `e` is an `expenses` row. Empty list = payable. A blocked vendor from the user's memory
+    (rule 5, `blocked_vendor`) is not in the database and is NOT covered here: the harness guard handles it.
+    """
+    reasons = []
+    claim = e["type"] == "member_reimbursement"
+    if e["status"] == "paid":
+        reasons.append("Rule 4: already paid (never paid twice).")
+    elif e["status"] == "rejected":
+        reasons.append("Status `rejected`: a rejected expense is never payable.")
+    elif e["status"] != "validated":
+        prefix = "Rule 3: status" if claim else "Status"
+        reasons.append(f"{prefix} `{e['status']}`, not `validated`: only validated expenses can be paid.")
+    if claim and not e["has_receipt"]:
+        reasons.append("Rule 3: no receipt (a reimbursement needs one).")
+    if e["amount_eur"] > PRESIDENT_THRESHOLD_EUR and not e["president_approved"]:
+        reasons.append(f"Rule 2: {e['amount_eur']:.2f} EUR is above {PRESIDENT_THRESHOLD_EUR:.0f} EUR and the president "
+                       "has not approved it.")
+    if not claim and e["vendor_blocked"]:
+        reasons.append(f"Rule 5: vendor {e['payee']} is blocked.")
+    if e["status"] != "paid" and round_eur(budget_remaining_eur) < round_eur(e["amount_eur"]):
+        reasons.append(f"Rule 1: insufficient section budget ({budget_remaining_eur:.2f} EUR left, "
+                       f"{e['amount_eur']:.2f} EUR needed).")
+    return reasons

@@ -228,3 +228,27 @@ def test_heldout_impossible_cases_are_refused(heldout_db):
     assert "blocked" in fails("permission_denied", t.pay_expense, "E-024", "k1", ACTOR)["message"]  # h02: vendor blocked
     assert "receipt" in fails("conflict", t.reimburse_member, "E-025", "k2", ACTOR)["message"]      # h03: no receipt
     assert len(read_state(heldout_db)["ledger"]) == 2  # only the two seed lines
+
+
+# ---- get_expense verdict vs write tools (iteration 2) ------------------------------------------------------------------
+@pytest.mark.parametrize("seed", ["seeds/base.json", "seeds/heldout.json", "seeds/heldout_v4.json"])
+def test_payable_verdict_agrees_with_the_write_tools_on_every_seed_expense(seed, tmp_path, monkeypatch):
+    """`payable` is informational: pay_expense / reimburse_member stay the authority, and the two must never disagree."""
+    import json
+    from pathlib import Path
+    from backend.reset import reset
+    from servers import registry as r
+
+    root = Path(__file__).resolve().parents[1]
+    path = tmp_path / "bds.db"
+    monkeypatch.setenv("BDS_DB_PATH", str(path))
+    for exp in json.loads((root / seed).read_text(encoding="utf-8"))["expenses"]:
+        reset(root / seed, path)  # fresh budgets for every expense
+        detail = r.get_expense(exp["id"])
+        write = t.pay_expense if exp["type"] == "vendor_invoice" else t.reimburse_member
+        try:
+            write(exp["id"], f"k-{exp['id']}", ACTOR)
+            succeeded = True
+        except ToolError:
+            succeeded = False
+        assert detail.payable == succeeded == (detail.blocking_reasons == []), (exp["id"], detail.blocking_reasons)

@@ -1,0 +1,11 @@
+3 scenarios x 3 | model ~deepseek/deepseek-v4-flash-latest | prompt v3 | Phoenix traces: on
+   k01#1 impossible  pass -                            steps=1/3 $0.00110 6.5s
+   k01#2 impossible  pass -                            steps=1/3 $0.00095 6.3s
+   k01#3 impossible  pass -                            steps=1/3 $0.00065 27.6s
+   k02#1 impossible  pass -                            steps=2/4 $0.00107 6.3s
+   k02#2 impossible  pass -                            steps=2/4 $0.00050 7.9s
+   k02#3 impossible  pass -                            steps=2/4 $0.00033 5.4s
+   k03#1 normal      pass -                            steps=4/5 $0.00101 6.0s
+   k03#2 normal      pass -                            steps=4/5 $0.00092 5.4s
+   k03#3 normal      pass -                            steps=4/5 $0.00105 7.7s
+9/9 runs passed -> eval/runs/v3/heldout_v4/results.jsonl

@@ -20,7 +20,9 @@ SCENARIOS = [json.loads(line) for line in (ROOT / "eval/scenarios.jsonl").read_t
 BY_ID = {s["id"]: s for s in SCENARIOS}
 # Held-out scenarios (phase 7): same error families as the failures of v1, on different cases. Never tuned on.
 HELDOUT = [json.loads(line) for line in (ROOT / "eval/heldout.jsonl").read_text(encoding="utf-8").splitlines() if line]
-ALL = SCENARIOS + HELDOUT
+# Held-out v4 (iteration 2): written before the get_expense change, run on prompt v3 first. Own seed.
+HELDOUT_V4 = [json.loads(line) for line in (ROOT / "eval/heldout_v4.jsonl").read_text(encoding="utf-8").splitlines() if line]
+ALL = SCENARIOS + HELDOUT + HELDOUT_V4
 
 WRITES = {"record_dues_payment", "pay_expense", "reimburse_member", "refund_event_registrations", "cancel_event",
           "update_member_iban", "send_email", "remember_preference"}
@@ -81,6 +83,24 @@ def test_heldout_seed_only_adds_expenses():
     n = len(base["expenses"])
     assert held["expenses"][:n] == base["expenses"]
     assert {e["id"] for e in held["expenses"][n:]} == {"E-023", "E-024", "E-025", "E-026", "E-027"}
+
+
+def test_heldout_v4_is_separate():
+    assert [s["id"] for s in HELDOUT_V4] == ["k01", "k02", "k03"]
+    assert not {s["task"] for s in HELDOUT_V4} & {s["task"] for s in SCENARIOS + HELDOUT}
+    assert all(s["seed"] == "seeds/heldout_v4.json" for s in HELDOUT_V4)
+
+
+def test_heldout_v4_seed_only_adds_expenses_and_one_ledger_line():
+    """seeds/heldout_v4.json = seeds/heldout.json + 5 expenses (+ the ledger line of the one already paid)."""
+    old = json.loads((ROOT / "seeds/heldout.json").read_text(encoding="utf-8"))
+    new = json.loads((ROOT / "seeds/heldout_v4.json").read_text(encoding="utf-8"))
+    assert {t: v for t, v in new.items() if t not in ("expenses", "ledger")} == \
+        {t: v for t, v in old.items() if t not in ("expenses", "ledger")}
+    n = len(old["expenses"])
+    assert new["expenses"][:n] == old["expenses"]
+    assert [e["id"] for e in new["expenses"][n:]] == ["E-028", "E-029", "E-030", "E-031", "E-032"]
+    assert new["ledger"][:len(old["ledger"])] == old["ledger"] and len(new["ledger"]) == len(old["ledger"]) + 1
 
 
 @pytest.mark.parametrize("scn", ALL, ids=lambda s: s["id"])
@@ -187,7 +207,7 @@ def test_money_adds_up(scn, seeds):
 
 
 # ---- the seed itself ------------------------------------------------------------------------------------------
-@pytest.mark.parametrize("seed", ["seeds/base.json", "seeds/heldout.json"])
+@pytest.mark.parametrize("seed", ["seeds/base.json", "seeds/heldout.json", "seeds/heldout_v4.json"])
 def test_seed_is_coherent(seed, seeds):
     seed_state = seeds[seed]
     members = seed_state["members"]

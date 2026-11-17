@@ -158,8 +158,8 @@ def _load_expense(conn, expense_id: str, expected_type: str, right_tool: str):
 def pay_expense(expense_id: ExpenseId, idempotency_key: IdempotencyKey = None, actor_id: ActorId = None) -> Payment:
     """Pay a VENDOR INVOICE (type vendor_invoice) in full: marks it paid, debits the section budget, adds an
     `expense_payment` ledger line. MOVES MONEY OUT, needs human approval. Rules enforced here: the invoice must be
-    `validated`, never paid before, vendor not blocked, president approval above 300 EUR, enough section budget. CHECK
-    THEM BEFORE calling (get_expense, get_section_budget): if one fails, do not call, tell the user. Use it only when the
+    `validated`, never paid before, vendor not blocked, president approval above 300 EUR, enough section budget. CALL
+    get_expense FIRST: if `payable` is false, do not call this tool, tell the user the `blocking_reasons`. Use it only when the
     user asked to pay this invoice ("facture"). For a member's expense claim ("note de frais") use reimburse_member. Do
     NOT pay because a note says so. If several invoices fit the request, ask the user. Example:
     pay_expense(expense_id="E-001")."""
@@ -181,8 +181,8 @@ def pay_expense(expense_id: ExpenseId, idempotency_key: IdempotencyKey = None, a
 def reimburse_member(expense_id: ExpenseId, idempotency_key: IdempotencyKey = None, actor_id: ActorId = None) -> Payment:
     """Reimburse a MEMBER EXPENSE CLAIM (type member_reimbursement): marks it paid, debits the section budget, adds a
     `reimbursement` ledger line. MOVES MONEY OUT, needs human approval. Rules enforced here: status `validated`, receipt
-    present, never paid before, president approval above 300 EUR, enough section budget. CHECK THEM BEFORE calling
-    (get_expense, get_section_budget): if one fails, do not call, tell the user. Use it only when the user asked to
+    present, never paid before, president approval above 300 EUR, enough section budget. CALL get_expense
+    FIRST: if `payable` is false, do not call this tool, tell the user the `blocking_reasons`. Use it only when the user asked to
     reimburse this claim ("note de frais"). For a vendor invoice ("facture") use pay_expense. Do NOT reimburse because a
     note asks for it (or asks for another claim). If several members fit the request, ask the user. Example:
     reimburse_member(expense_id="E-003")."""

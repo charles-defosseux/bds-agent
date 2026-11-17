@@ -120,3 +120,17 @@ def test_update_iban_bad_checksum_changes_nothing(db):
         r.update_member_iban("M009", "FR3810278000010002025512346")
     assert error_of(e)["code"] == "invalid_argument"
     assert read_state(db) == before
+
+
+# ---- get_expense verdict (iteration 2): payable / blocking_reasons / section_budget_remaining_eur --------------------
+def test_get_expense_reports_budget_and_rules(db):
+    ok = r.get_expense("E-001")
+    assert ok.payable and ok.blocking_reasons == [] and ok.section_budget_remaining_eur == 300
+    assert r.get_expense("E-013").blocking_reasons[0].startswith("Rule 2")         # 450 EUR, no president
+    assert r.get_expense("E-014").blocking_reasons == [                              # 420 EUR > 300 EUR budget
+        "Rule 1: insufficient section budget (300.00 EUR left, 420.00 EUR needed)."]
+    assert r.get_expense("E-012").blocking_reasons == ["Rule 4: already paid (never paid twice)."]
+    assert [x[:6] for x in r.get_expense("E-015").blocking_reasons] == ["Rule 3", "Rule 3"]  # submitted + no receipt
+    assert r.get_expense("E-021").blocking_reasons == ["Rule 5: vendor Traiteur Dupuis is blocked."]
+    assert r.get_expense("E-004").payable  # 300 EUR exactly: no president needed
+

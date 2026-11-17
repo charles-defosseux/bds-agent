@@ -22,7 +22,7 @@
 | registry | `list_events` | lecture | idem | non | — |
 | registry | `get_event` | lecture | idem | non | description ⇒ `untrusted_text` |
 | registry | `list_expenses` | lecture | idem | non | notes absentes |
-| registry | `get_expense` | lecture | idem | non | note ⇒ `untrusted_text` |
+| registry | `get_expense` | lecture | idem | non | note ⇒ `untrusted_text` ; + `section_budget_remaining_eur`, `payable`, `blocking_reasons` (règles numérotées ; informatif, les outils d'écriture restent l'autorité) |
 | registry | `send_email` | écriture avec clé | idempotent | **oui si > 1 destinataire** (e-mail groupé, règle 2) | destinataires existants |
 | registry | `cancel_event` | **dangereuse** | destructive | **oui** + garde-fou | déjà annulé ⇒ `conflict` |
 | registry | `update_member_iban` | **dangereuse** | destructive | **oui** + garde-fou | checksum mod 97 ; règle 6 = garde-fou du harness |
