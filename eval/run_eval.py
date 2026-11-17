@@ -50,7 +50,8 @@ def run_scenario(scenario: dict, client: McpClient, repeat: int = 1, model: str 
     client.set_failure(scenario.get("inject_failure"))  # bonus: fault injection, off by default
     app = build_graph(client=client, chat=chat, checkpointer=InMemorySaver(), store=store)
     run_id = f"{scenario['id']}#{repeat}"
-    config = run_config(f"eval-{run_id}", DEFAULT_TREASURER, scenario["max_steps"], model)
+    config = run_config(f"eval-{run_id}", DEFAULT_TREASURER, scenario["max_steps"], model,
+                        interactive_questions=False)  # eval: a question ends the run
     decision = scenario.get("human_decision", "approve")
     approvals, out, error = [], {}, None
 

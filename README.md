@@ -21,7 +21,7 @@ Python ≥ 3.12, versions des bibliothèques alignées sur le lab du cours (`pyp
 ## Commandes
 
 ```bash
-uv run pytest                                                                      # 331 tests, sans clé API ni réseau
+uv run pytest                                                                      # 333 tests, sans clé API ni réseau
 uv run python eval/run_eval.py --scenarios eval/scenarios.jsonl --out eval/        # commande du prof : 30 scénarios -> eval/results.jsonl
 uv run python eval/report.py                                                       # eval/results.jsonl -> eval/report.md
 uv run python eval/run_eval.py --scenarios eval/scenarios.jsonl --out eval/ --only s002   # un seul scénario
@@ -33,7 +33,7 @@ uv run python scripts/failure_demo.py                                           
 ```
 
 Options de `run_eval.py` : `--repeats N`, `--model ID`, `--only ID…`, `--kind {normal,ambiguous,impossible,adversarial}`,
-`--no-trace`. Attention : `--out eval/` **écrase** `eval/results.jsonl`, qui contient les résultats officiels (v4).
+`--no-trace`. Attention : `--out eval/` **écrase** `eval/results.jsonl`, qui contient les résultats officiels (v5 : mêmes résultats que la v4, 90/90, `eval/runs/v5/compare.md`).
 Pour un essai sans les écraser, utiliser un autre dossier (`--out eval/runs/essai/`).
 
 ## Le graphe
@@ -83,7 +83,10 @@ graph TD;
 
 Lecture : `think` (le modèle décide) → `read_tool` pour une lecture ; `guard` puis `approve` (pause `interrupt()`) puis
 `write_tool` pour une écriture dangereuse ou un e-mail ; `write_tool` direct pour `record_dues_payment` (clé d'idempotence,
-sans approbation) ; `ask_user` et `give_up` terminent le run (`stop_reason` = `asked_user` / `max_steps`).
+sans approbation) ; `give_up` termine le run (`stop_reason` = `max_steps`). `ask_user` pose une vraie question : en mode interactif (Studio, scripts) le nœud
+appelle `interrupt({"question": ...})`, la réponse libre de l'humain revient au modèle comme résultat de l'outil puis le graphe retourne à
+`think` (la question compte dans le budget) ; en évaluation (`interactive_questions` faux, réglé par `run_eval.py`) elle termine le run
+(`stop_reason` = `asked_user`).
 
 ## Les 6 exigences du projet et où les trouver
 
@@ -112,7 +115,7 @@ sans approbation) ; `ask_user` et `give_up` terminent le run (`stop_reason` = `a
   `get_expense` renvoie `payable` et `blocking_reasons`.
 - **Budget** : `max_steps` = nombre d'appels d'outils ; atteindre le budget est un échec avec son propre `stop_reason`.
 
-## Résultats par type (v4, 30 scénarios × 3 essais, `eval/report.md`)
+## Résultats par type (v5, 30 scénarios × 3 essais, `eval/report.md`)
 
 | Type | n | pass^3 [Wilson 95 %] |
 |---|---|---|
@@ -122,8 +125,9 @@ sans approbation) ; `ask_user` et `give_up` terminent le run (`stop_reason` = `a
 | adversarial | 6 | 6/6 = 100 % [61–100] |
 | **Total** | 30 | **30/30 = 100 % [89–100]** · 90/90 runs |
 
-Injections suivies par le modèle : 0/18 ; arrivées jusqu'au backend : 0/18. Coût total 0,088 $ (0,00098 $ par succès),
-latence p50 / p95 3,5 s / 9,8 s, 1,42 M tokens en entrée. **Ce 100 % est optimiste** : les corrections ont été écrites en lisant
+Injections suivies par le modèle : 0/18 ; arrivées jusqu'au backend : 0/18. Coût total 0,073 $ (0,00081 $ par succès),
+latence p50 / p95 3,3 s / 9,1 s, 1,43 M tokens en entrée. La v4 donnait les mêmes taux de réussite (90/90, mêmes pass^3 par type) ; seuls le coût
+(0,088 $) et la latence (3,5 s / 9,8 s) varient, ce qui relève du bruit du modèle et du fournisseur (`eval/runs/v5/compare.md`). **Ce 100 % est optimiste** : les corrections ont été écrites en lisant
 les traces de ces 30 scénarios (limite de Goodhart, `docs/ERROR_ANALYSIS.md`). Les held-out (7 scénarios jamais utilisés
 pour régler le prompt) donnent 10/12 sur les anciens et 9/9 sur les nouveaux.
 

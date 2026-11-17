@@ -26,7 +26,7 @@ ASK_USER_SPEC = {"type": "function", "function": {
     "description": ("Ask the user ONE short question in French when the request is ambiguous (several members, invoices or "
                     "events fit) or misses information you need (an IBAN, an amount, which event). It ENDS the run and "
                     "changes nothing. Do NOT use it to ask for confirmation of a clear request: approvals are handled by "
-                    "the harness. Example: ask_user(question=\"Quel Thomas : Thomas Leroy (padel) ou Thomas Moreau (voile) ?\")"),
+                    "the harness. Example: ask_user(question=\"Quel Thomas : Thomas Foussard (padel) ou Thomas Moreau (voile) ?\")"),
     "parameters": {"type": "object", "properties": {"question": {"type": "string", "minLength": 1}},
                    "required": ["question"], "additionalProperties": False}}}
 

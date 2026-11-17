@@ -49,9 +49,9 @@ class ScriptedModel:
                 "cost_usd": 0.001}
 
 
-def run(client, model, task, thread="t1", max_steps=4, checkpointer=None):
+def run(client, model, task, thread="t1", max_steps=4, checkpointer=None, interactive=False):
     app = build_graph(client=client, chat=model, checkpointer=checkpointer or InMemorySaver())
-    config = run_config(thread, max_steps=max_steps)
+    config = run_config(thread, max_steps=max_steps, interactive_questions=interactive)
     return app, config, app.invoke({"task": task, "max_steps": max_steps}, config)
 
 
@@ -113,11 +113,39 @@ def test_untrusted_text_is_framed_in_the_model_context(client):
 def test_ask_user_ends_the_run_without_changing_anything(client, db_path):
     before = read_state(db_path)
     model = ScriptedModel(("search_members", {"query": "Thomas"}),
-                          ("ask_user", {"question": "Quel Thomas : Leroy ou Moreau ?"}))
+                          ("ask_user", {"question": "Quel Thomas : Foussard ou Moreau ?"}))
     _, _, out = run(client, model, "Rembourse la note de frais de Thomas.")
-    assert out["stop_reason"] == "asked_user" and out["answer"] == "Quel Thomas : Leroy ou Moreau ?"
+    assert out["stop_reason"] == "asked_user" and out["answer"] == "Quel Thomas : Foussard ou Moreau ?"
     assert [c["tool"] for c in out["tool_calls"]] == ["search_members", "ask_user"]
     assert read_state(db_path) == before
+
+
+def test_interactive_question_pauses_then_the_agent_acts_on_the_answer(client, db_path):
+    model = ScriptedModel(("search_members", {"query": "Thomas"}),
+                          ("ask_user", {"question": "Quel Thomas : Foussard ou Moreau ?"}),
+                          ("reimburse_member", {"expense_id": "E-010"}), "Note E-010 remboursée.")
+    app, config, out = run(client, model, "Rembourse la note de frais de Thomas.", interactive=True)
+    assert out["__interrupt__"][0].value == {"question": "Quel Thomas : Foussard ou Moreau ?"}
+    assert "stop_reason" not in out or out["stop_reason"] is None
+    assert len(read_state(db_path)["ledger"]) == 2  # nothing written yet
+
+    out = app.invoke(Command(resume="Thomas Foussard"), config)  # free text, not a decision
+    assert model.seen[-1][-1]["content"].count("Réponse de l'utilisateur : Thomas Foussard") == 1
+    payload = out["__interrupt__"][0].value  # the agent went back to think, then asked for the approval
+    assert payload["tool"] == "reimburse_member" and "Thomas Foussard" in payload["beneficiary"]
+    assert len(read_state(db_path)["ledger"]) == 2
+
+    out = app.invoke(Command(resume={"approve": True}), config)
+    assert out["stop_reason"] == "final_answer" and len(read_state(db_path)["ledger"]) == 3
+    assert [c["tool"] for c in out["tool_calls"]] == ["search_members", "ask_user", "reimburse_member"]
+    assert out["steps"] == 4
+
+
+def test_interactive_question_counts_in_the_budget(client):
+    model = ScriptedModel(("ask_user", {"question": "Quel Thomas ?"}), ("get_ledger", {}), ("get_ledger", {}))
+    app, config, out = run(client, model, "Rembourse Thomas.", max_steps=2, interactive=True)
+    out = app.invoke(Command(resume="Thomas Moreau"), config)
+    assert out["stop_reason"] == "max_steps" and [c["tool"] for c in out["tool_calls"]] == ["ask_user", "get_ledger"]
 
 
 def test_budget_reached_stops_with_its_own_stop_reason(client, db_path):

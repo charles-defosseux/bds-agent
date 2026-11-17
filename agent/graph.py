@@ -8,7 +8,9 @@
                              +-> write_tool -> think                             (record_dues_payment: keyed, no approval)
                              +-> think                                           (the model sent unreadable arguments)
                              +-> remember -> think                              (remember_preference, user's words only)
-                             +-> ask_user -> END                                 (stop_reason = asked_user)
+                             +-> ask_user -> think                                (interactive: interrupt() with the question, the answer
+             |            -> END                                    comes back as the tool result; evaluation: END,
+             |                                                      stop_reason = asked_user)
                              +-> give_up -> END                                  (stop_reason = max_steps)
                              +-> END                                             (final answer)
 
@@ -108,6 +110,13 @@ def as_decision(value) -> dict:
     except ValueError:
         pass
     return {"approve": text.lower() in {"true", "yes", "y", "ok", "oui", "approve"}, "reason": text}
+
+
+def as_answer(value) -> str:
+    """The human's free-text answer to ask_user (Studio may send a string or a {"answer": ...} object)."""
+    if isinstance(value, dict):
+        value = value.get("answer", value.get("text", ""))
+    return str(value).strip()
 
 
 def approval_payload(tool: str, args: dict, facts: dict) -> dict:
@@ -337,12 +346,22 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
             update["facts"] = {**state["facts"], key: value}
         return update
 
-    def ask_user(state: AgentState) -> dict:
+    def ask_user(state: AgentState, config) -> Command:
+        """Pattern 4, "ask a question". Interactive (Studio, scripts): interrupt() with the question; the human's free-text
+        answer goes back to the model as the tool result and the run continues. Evaluation (`interactive_questions`
+        false): the question ends the run, as before. No side effect before interrupt(): the node restarts when resumed."""
         args = state["pending"]["args"]
         question = str(args.get("question", ""))
-        return {"answer": question, "status": "done", "stop_reason": "asked_user",
-                "tool_calls": [{"tool": "ask_user", "args": args, "outcome": "ok"}],
-                "transcript": [f"      -> question for the user: {question}"]}
+        attempt = {"tool": "ask_user", "args": args, "outcome": "ok"}
+        if not config.get("configurable", {}).get("interactive_questions", True):
+            return Command(goto=END, update={
+                "answer": question, "status": "done", "stop_reason": "asked_user", "tool_calls": [attempt],
+                "transcript": [f"      -> question for the user: {question}"]})
+        reply = as_answer(interrupt({"question": question}))
+        result = {"ok": True, "data": f"Réponse de l'utilisateur : {reply}"}
+        return Command(goto="think", update={
+            "observations": [{"tool": "ask_user", "args": args, "result": result}], "tool_calls": [attempt],
+            "transcript": [f"      -> question: {question}", f"      <- the human answered: {reply}"]})
 
     def give_up(state: AgentState) -> dict:
         return {"answer": None, "status": "done", "stop_reason": "max_steps",
@@ -350,9 +369,10 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
 
     g = StateGraph(AgentState, input_schema=Input)
     for name, fn in [("init", init), ("recall", recall), ("think", think), ("read_tool", run_tool), ("write_tool", run_tool),
-                     ("remember", remember), ("ask_user", ask_user), ("give_up", give_up)]:
+                     ("remember", remember), ("give_up", give_up)]:
         g.add_node(name, fn)
     g.add_node("guard", guard, destinations=("approve", "write_tool", "think"))
+    g.add_node("ask_user", ask_user, destinations=("think", END))
     g.add_node("approve", approve, destinations=("write_tool", "think"))
     g.add_edge(START, "init")
     g.add_edge("init", "recall")
@@ -361,6 +381,5 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
     g.add_edge("read_tool", "think")
     g.add_edge("write_tool", "think")
     g.add_edge("remember", "think")
-    g.add_edge("ask_user", END)
     g.add_edge("give_up", END)
     return g.compile(checkpointer=checkpointer, store=store)

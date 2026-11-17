@@ -15,10 +15,11 @@ DEFAULT_MAX_STEPS = 8
 
 
 def run_config(thread_id: str, user_id: str = DEFAULT_TREASURER, max_steps: int = DEFAULT_MAX_STEPS,
-               model: str | None = None) -> dict:
+               model: str | None = None, interactive_questions: bool = True) -> dict:
     """LangGraph config of one run. `recursion_limit` is the safety net behind `max_steps` (each tool call is at most
-    4 super-steps: think, guard, approve, tool)."""
-    configurable = {"thread_id": thread_id, "user_id": user_id}
+    4 super-steps: think, guard, approve, tool). `interactive_questions`: ask_user pauses for a human answer (Studio,
+    scripts); false in the eval, where a question ends the run (stop_reason = asked_user)."""
+    configurable = {"thread_id": thread_id, "user_id": user_id, "interactive_questions": interactive_questions}
     if model:
         configurable["model"] = model
     return {"configurable": configurable, "recursion_limit": 4 * max_steps + 10}
