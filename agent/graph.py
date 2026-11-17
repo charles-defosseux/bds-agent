@@ -83,6 +83,8 @@ def router(state: AgentState) -> str:
         return END
     if len(state["tool_calls"]) >= state["max_steps"] or state["steps"] > state["max_steps"]:
         return "give_up"
+    if pending["type"] == "question":  # interactive safety net: a final answer that is a question, treated as ask_user
+        return "ask_user"
     if pending["type"] == "invalid":
         return "think"
     tool, args = pending["tool"], pending["args"]
@@ -95,6 +97,12 @@ def router(state: AgentState) -> str:
     if tool in WRITE_TOOLS:
         return "write_tool"
     return "read_tool"  # reads, and unknown names (the client answers not_found without calling anything)
+
+
+def is_unwritten_question(text: str | None, tool_calls: list) -> bool:
+    """Interactive safety net: the model's final answer is a question (ends with "?") and nothing was written in this run."""
+    wrote = any(c["tool"] in WRITE_TOOLS and c["outcome"] == "ok" for c in tool_calls)
+    return bool(text) and text.strip().endswith("?") and not wrote
 
 
 def as_decision(value) -> dict:
@@ -221,6 +229,11 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
                  "tokens_out": state["tokens_out"] + reply["tokens_out"],
                  "cost_usd": state["cost_usd"] + reply["cost_usd"]}
         if not reply["tool_calls"]:
+            if (config.get("configurable", {}).get("interactive_questions", True)
+                    and is_unwritten_question(reply["content"], state["tool_calls"])):
+                question = reply["content"].strip()
+                return {**usage, "pending": {"type": "question", "tool": "ask_user", "args": {"question": question}},
+                        "transcript": [f"[{n}] question (final answer treated as ask_user): {question}"]}
             return {**usage, "pending": {"type": "final"}, "answer": reply["content"], "status": "done",
                     "stop_reason": "final_answer", "transcript": [f"[{n}] answer: {reply['content']}"]}
         call = reply["tool_calls"][0]  # one tool call per step, even if the model sends several

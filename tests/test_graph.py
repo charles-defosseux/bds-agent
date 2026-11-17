@@ -148,6 +148,49 @@ def test_interactive_question_counts_in_the_budget(client):
     assert out["stop_reason"] == "max_steps" and [c["tool"] for c in out["tool_calls"]] == ["ask_user", "get_ledger"]
 
 
+def test_interactive_final_question_is_treated_as_ask_user(client, db_path):
+    q = "Quel Thomas : Foussard ou Moreau ?"
+    model = ScriptedModel(("search_members", {"query": "Thomas"}), q,
+                          ("reimburse_member", {"expense_id": "E-010"}), "Note E-010 remboursée.")
+    app, config, out = run(client, model, "Rembourse la note de frais de Thomas.", interactive=True)
+    assert out["__interrupt__"][0].value == {"question": q}
+    assert len(read_state(db_path)["ledger"]) == 2
+
+    out = app.invoke(Command(resume="Thomas Foussard"), config)
+    assert model.seen[-1][-1]["content"].count("Réponse de l'utilisateur : Thomas Foussard") == 1
+    assert out["__interrupt__"][0].value["tool"] == "reimburse_member"
+    out = app.invoke(Command(resume={"approve": True}), config)
+    assert out["stop_reason"] == "final_answer" and len(read_state(db_path)["ledger"]) == 3
+    assert [c["tool"] for c in out["tool_calls"]] == ["search_members", "ask_user", "reimburse_member"]
+    assert out["steps"] == 4
+
+
+def test_interactive_final_question_counts_in_the_budget(client):
+    model = ScriptedModel("Quel Thomas ?", ("get_ledger", {}), ("get_ledger", {}))
+    app, config, _ = run(client, model, "Rembourse Thomas.", max_steps=2, interactive=True)
+    out = app.invoke(Command(resume="Thomas Moreau"), config)
+    assert out["stop_reason"] == "max_steps" and [c["tool"] for c in out["tool_calls"]] == ["ask_user", "get_ledger"]
+
+
+def test_interactive_final_answer_that_is_not_a_question_ends_normally(client):
+    model = ScriptedModel(("get_ledger", {}), "Voici le grand livre.")
+    _, _, out = run(client, model, "Montre le grand livre.", interactive=True)
+    assert "__interrupt__" not in out and out["stop_reason"] == "final_answer" and out["answer"] == "Voici le grand livre."
+
+
+def test_interactive_final_question_after_a_write_ends_normally(client):
+    model = ScriptedModel(("record_dues_payment", {"member_id": "M003", "amount_eur": 30}), "Cotisation notée. Autre chose ?")
+    _, _, out = run(client, model, "Hugo Bernard vient de payer sa cotisation de 30 €, enregistre-la.", interactive=True)
+    assert "__interrupt__" not in out and out["stop_reason"] == "final_answer"
+
+
+def test_evaluation_mode_final_question_is_a_plain_final_answer(client):
+    model = ScriptedModel(("search_members", {"query": "Thomas"}), "Quel Thomas ?")
+    _, _, out = run(client, model, "Rembourse la note de frais de Thomas.", interactive=False)
+    assert "__interrupt__" not in out and out["stop_reason"] == "final_answer" and out["answer"] == "Quel Thomas ?"
+    assert [c["tool"] for c in out["tool_calls"]] == ["search_members"]
+
+
 def test_budget_reached_stops_with_its_own_stop_reason(client, db_path):
     model = ScriptedModel(*[("get_ledger", {})] * 3)
     _, _, out = run(client, model, "Boucle.", max_steps=2)

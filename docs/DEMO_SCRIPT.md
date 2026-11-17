@@ -99,7 +99,7 @@ question termine le run, c'est ce que mesure `eval/results.jsonl`).
 6. Preuve : le grand livre a une ligne `reimbursement` de 38 € (commande de la partie 1, étape 5). Dire : « l'humain intervient deux fois :
    pour lever l'ambiguïté, puis pour autoriser la sortie d'argent ».
 
-Si le modèle ne pose pas la question (non-déterminisme), ne pas insister : passer à la suite.
+Si le modèle pose sa question dans sa réponse finale au lieu d'appeler `ask_user`, le harness (mode interactif seulement) la traite comme un `ask_user` : même pause, même reprise. Si le modèle ne pose pas la question du tout (non-déterminisme), ne pas insister : passer à la suite.
 
 ## Plan B : le réseau tombe
 
