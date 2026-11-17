@@ -28,7 +28,7 @@
 | Latency per run | 4.3 s | 10.5 s | 14 % | 454 s |
 
 - **Cost per success** = total cost / number of successes = 0.00101 $
-- Tokens : 1467107 input, 28002 output
+- Tokens: 1467107 input, 28002 output
 
 | Tool | calls | latency p50 | p95 |
 |---|---|---|---|

@@ -172,7 +172,7 @@ def render(runs: list[dict]) -> str:
               f"| Latency per run | {percentile(lat, 50):.1f} s | {percentile(lat, 95):.1f} s | "
               f"{100 * top5_share(lat):.0f} % | {sum(lat):.0f} s |",
               "", f"- **Cost per success** = total cost / number of successes = {per_success}",
-              f"- Tokens : {sum(r['tokens_in'] for r in runs)} input, {sum(r['tokens_out'] for r in runs)} output"]
+              f"- Tokens: {sum(r['tokens_in'] for r in runs)} input, {sum(r['tokens_out'] for r in runs)} output"]
     tool_lat = defaultdict(list)
     for r in runs:
         for c in r["tool_calls"]:

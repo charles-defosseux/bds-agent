@@ -14,7 +14,7 @@ from pydantic import Field
 from backend.db import connect
 from backend.money import round_eur
 
-# ---- Financial rules (docs/REGLEMENT_FINANCIER.md) -------------------------------------------------------------------
+# ---- Financial rules (docs/FINANCIAL_RULES.md) -------------------------------------------------------------------
 PRESIDENT_THRESHOLD_EUR = 300.0  # above this, the expense needs president_approved = true (rule 2)
 
 # ---- MCP annotations: hints for clients. Approval comes from OUR classification (docs/TOOLS.md), not from these. ----
@@ -91,7 +91,7 @@ def untrusted(text: str) -> str | None:
 
 
 def blocking_reasons(e, budget_remaining_eur: float) -> list[str]:
-    """Financial rules (docs/REGLEMENT_FINANCIER.md) that stop `e` from being paid, each with its rule number.
+    """Financial rules (docs/FINANCIAL_RULES.md) that stop `e` from being paid, each with its rule number.
 
     Informational mirror of what pay_expense / reimburse_member enforce (`tests/test_registry.py` checks that both agree
     on every seed expense). `e` is an `expenses` row. Empty list = payable. A blocked vendor from the user's memory

@@ -1,45 +1,48 @@
-# bds-agent — agent de trésorerie du BDS
+# bds-agent — BDS treasury agent
 
-Projet de groupe du cours « Agentic Workflows » (Albert School × Mines Paris).
+Group project of the "Agentic Workflows" course (Albert School × Mines Paris).
 
-**Le domaine en 3 lignes.** Un agent assiste la trésorière ou le trésorier du Bureau des Sports : cotisations, factures
-des prestataires, notes de frais, inscriptions aux événements, annulations, e-mails aux membres.
-Il lit et **modifie** une base SQLite (argent sortant, annulation d'événement, IBAN, e-mail groupé : actions
-dangereuses ou irréversibles). On ne juge pas ses phrases : on relit la base après chaque run pour vérifier
-qu'il a fait la bonne chose **et seulement elle**.
+> **Language note: campaigns v1 to v5.2 were run with French tasks, v6 with English tasks.** The repository, the seed data, the scenarios and the
+> agent's answers are now in English (the agent answers in the user's language, English by default).
+
+**The domain in 3 lines.** An agent assists the treasurer of the Bureau des Sports (BDS, a school sports association): membership dues,
+vendor invoices, expense claims, event registrations, cancellations, e-mails to members.
+It reads and **modifies** a SQLite database (money out, event cancellation, IBAN, group e-mail: dangerous
+or irreversible actions). We do not judge its sentences: we re-read the database after each run to check
+that it did the right thing **and only that**.
 
 ## Installation
 
 ```bash
 uv sync
-cp .env.example .env   # puis renseigner OPENROUTER_API_KEY (jamais commité)
+cp .env.example .env   # then fill in OPENROUTER_API_KEY (never committed)
 ```
 
-Modèle par défaut : `~deepseek/deepseek-v4-flash-latest` via OpenRouter (`OPENROUTER_MODEL`, `temperature=0`).
-Python ≥ 3.12, versions des bibliothèques alignées sur le lab du cours (`pyproject.toml`, `uv.lock`).
+Default model: `~deepseek/deepseek-v4-flash-latest` via OpenRouter (`OPENROUTER_MODEL`, `temperature=0`).
+Python ≥ 3.12, library versions aligned with the course lab (`pyproject.toml`, `uv.lock`).
 
-## Commandes
+## Commands
 
 ```bash
-uv run pytest                                                                      # 333 tests, sans clé API ni réseau
-uv run python eval/run_eval.py --scenarios eval/scenarios.jsonl --out eval/        # commande du prof : 30 scénarios -> eval/results.jsonl
+uv run pytest                                                                      # 342 tests, no API key or network needed
+uv run python eval/run_eval.py --scenarios eval/scenarios.jsonl --out eval/        # instructor's command: 30 scenarios -> eval/results.jsonl
 uv run python eval/report.py                                                       # eval/results.jsonl -> eval/report.md
-uv run python eval/run_eval.py --scenarios eval/scenarios.jsonl --out eval/ --only s002   # un seul scénario
-uv run phoenix serve                                                               # traces : http://localhost:6006 (projet bds-agent)
-uv run python -m backend.reset seeds/base.json                                     # remet la base de démo à zéro
+uv run python eval/run_eval.py --scenarios eval/scenarios.jsonl --out eval/ --only s002   # a single scenario
+uv run phoenix serve                                                               # traces: http://localhost:6006 (project bds-agent)
+uv run python -m backend.reset seeds/base.json                                     # reset the demo database
 uv run langgraph dev                                                               # LangGraph Studio (demo UI)
-uv run python scripts/approval_demo.py                                             # pause -> arrêt du process -> reprise dans un autre
-uv run python scripts/failure_demo.py                                              # panne injectée : un seul paiement (modèle scripté)
+uv run python scripts/approval_demo.py                                             # pause -> process stop -> resume in another process
+uv run python scripts/failure_demo.py                                              # injected failure: a single payment (scripted model)
 ```
 
-Options de `run_eval.py` : `--repeats N`, `--model ID`, `--only ID…`, `--kind {normal,ambiguous,impossible,adversarial}`,
-`--no-trace`. Attention : `--out eval/` **écrase** `eval/results.jsonl`, qui contient les résultats officiels (v5.2 : mêmes taux de réussite que la v5, 90/90, `eval/runs/v5_2/compare.md`).
-Pour un essai sans les écraser, utiliser un autre dossier (`--out eval/runs/essai/`).
+`run_eval.py` options: `--repeats N`, `--model ID`, `--only ID…`, `--kind {normal,ambiguous,impossible,adversarial}`,
+`--no-trace`. Warning: `--out eval/` **overwrites** `eval/results.jsonl`, which holds the official results (v6: same success rates as v5.2, 90/90, `eval/runs/v6_en/compare.md`).
+For a trial without overwriting them, use another folder (`--out eval/runs/trial/`).
 
-## Le graphe
+## The graph
 
-Schéma généré par `build_graph().get_graph().draw_mermaid()` (les flèches en pointillés sont des arêtes conditionnelles,
-décidées par le routeur pur `agent/graph.py::router`).
+Diagram generated by `build_graph().get_graph().draw_mermaid()` (dotted arrows are conditional edges,
+decided by the pure router `agent/graph.py::router`).
 
 ```mermaid
 graph TD;
@@ -81,101 +84,102 @@ graph TD;
 	classDef last fill:#bfb6fc
 ```
 
-Lecture : `think` (le modèle décide) → `read_tool` pour une lecture ; `guard` puis `approve` (pause `interrupt()`) puis
-`write_tool` pour une écriture dangereuse ou un e-mail ; `write_tool` direct pour `record_dues_payment` (clé d'idempotence,
-sans approbation) ; `give_up` termine le run (`stop_reason` = `max_steps`). `ask_user` pose une vraie question : en mode interactif (Studio, scripts) le nœud
-appelle `interrupt({"question": ...})`, la réponse libre de l'humain revient au modèle comme résultat de l'outil puis le graphe retourne à
-`think` (la question compte dans le budget) ; en évaluation (`interactive_questions` faux, réglé par `run_eval.py`) elle termine le run
+Reading: `think` (the model decides) → `read_tool` for a read; `guard` then `approve` (`interrupt()` pause) then
+`write_tool` for a dangerous write or an e-mail; `write_tool` directly for `record_dues_payment` (idempotency key,
+no approval); `give_up` ends the run (`stop_reason` = `max_steps`). `ask_user` asks a real question: in interactive mode (Studio, scripts) the node
+calls `interrupt({"question": ...})`, the human's free-text answer goes back to the model as the tool result ("User’s answer: …") and the graph returns to
+`think` (the question counts in the budget); in evaluation (`interactive_questions` false, set by `run_eval.py`) it ends the run
 (`stop_reason` = `asked_user`).
 
-## Les 6 exigences du projet et où les trouver
+## The 6 project requirements and where to find them
 
-| Exigence | Où dans le code |
+| Requirement | Where in the code |
 |---|---|
-| **Outils** : 2 serveurs MCP, arguments et erreurs typés | `servers/registry.py` (9 outils), `servers/treasury.py` (6 outils), `servers/common.py` (`ToolError(code, message, retryable)`, règles) ; client synchrone `agent/mcp_client.py` ; classification dans `docs/TOOLS.md` ; tests `tests/test_registry.py`, `test_treasury.py`, `test_mcp_client.py` |
-| **Graphe** : budget d'étapes + approbation humaine | `agent/graph.py` (nœuds, `router`, `approve` = `interrupt()`, `give_up`), `agent/tools.py` (retries, clé d'idempotence) ; tests `tests/test_router.py`, `test_graph.py` ; démo `scripts/approval_demo.py` |
-| **Mémoire** : long terme + test qu'elle change un run | `agent/memory.py` (`SqliteStore`, `remember_preference`, `recall`, signature, `blocked_vendor`) ; `tests/test_memory_effect.py` (avec / sans mémoire) ; scénarios d'éval avec `memory_seed` (dont s024) |
-| **Agents** : un seul, justifié | un seul agent ReAct (voir « Choix d'architecture ») ; justification dans `PLAN.md` §1 |
-| **Évaluation** : état final, résultats par type | `eval/scenarios.jsonl` (30), `eval/run_eval.py`, `eval/scorer.py` (testé : `tests/test_scorer.py`), `eval/report.py` → `eval/report.md` ; scénarios en clair dans `docs/SCENARIOS.md` |
-| **Traces** : tokens, coût, latence par run | `agent/tracing.py` (Phoenix, span TOOL par appel, redaction des IBAN / e-mails / clés), champs `tokens_in`, `tokens_out`, `cost_usd`, `latency_s` de `eval/results.jsonl` |
+| **Tools**: 2 MCP servers, typed arguments and errors | `servers/registry.py` (9 tools), `servers/treasury.py` (6 tools), `servers/common.py` (`ToolError(code, message, retryable)`, rules); synchronous client `agent/mcp_client.py`; classification in `docs/TOOLS.md`; tests `tests/test_registry.py`, `test_treasury.py`, `test_mcp_client.py` |
+| **Graph**: step budget + human approval | `agent/graph.py` (nodes, `router`, `approve` = `interrupt()`, `give_up`), `agent/tools.py` (retries, idempotency key); tests `tests/test_router.py`, `test_graph.py`; demo `scripts/approval_demo.py` |
+| **Memory**: long term + test that it changes a run | `agent/memory.py` (`SqliteStore`, `remember_preference`, `recall`, signature, `blocked_vendor`); `tests/test_memory_effect.py` (with / without memory); eval scenarios with `memory_seed` (including s024) |
+| **Agents**: a single one, justified | a single ReAct agent (see "Architecture choices"); justification in `PLAN.md` §1 |
+| **Evaluation**: final state, results by kind | `eval/scenarios.jsonl` (30), `eval/run_eval.py`, `eval/scorer.py` (tested: `tests/test_scorer.py`), `eval/report.py` → `eval/report.md`; scenarios in plain text in `docs/SCENARIOS.md` |
+| **Traces**: tokens, cost, latency per run | `agent/tracing.py` (Phoenix, a TOOL span per call, redaction of IBANs / e-mails / keys), fields `tokens_in`, `tokens_out`, `cost_usd`, `latency_s` of `eval/results.jsonl` |
 
-## Choix d'architecture (chiffrés)
+## Architecture choices (with numbers)
 
-- **Un seul agent** : tâches courtes (2,2 étapes en moyenne en v4) et couplées, qui écrivent un état partagé. Une équipe
-  d'agents coûterait ×2 à ×4 en appels au modèle sans gain mesurable attendu ; on n'a pas de mesure qui justifie plus d'un agent.
-- **15 outils MCP** (9 dans `registry`, 6 dans `treasury` ; voir `docs/TOOLS.md`) + 2 outils de contrôle
-  du harness (`ask_user`, `remember_preference`). 8 lectures, 7 écritures dont 5 soumises à approbation humaine
-  (`pay_expense`, `reimburse_member`, `refund_event_registrations`, `cancel_event`, `update_member_iban`) et les e-mails groupés.
-- **2 serveurs MCP en stdio** (`bds-registry`, `bds-treasury`) : rien à lancer à côté, le harness possède les process,
-  et l'MCP Inspector se branche sur la même commande.
-- **1 garde-fou déterministe** (`agent/guard.py`, fonction pure testée) avant `approve` : une écriture dangereuse doit être
-  justifiée par **la demande de l'utilisateur**, jamais par un texte lu dans un résultat d'outil. Le texte libre des outils est
-  renvoyé comme `untrusted_text`. La clé d'idempotence et l'identité du trésorier sont injectées par le harness, pas par le modèle.
-- **Règlement financier dans les outils**, pas dans le prompt (`docs/REGLEMENT_FINANCIER.md`, 6 règles) ; depuis la v4,
-  `get_expense` renvoie `payable` et `blocking_reasons`.
-- **Budget** : `max_steps` = nombre d'appels d'outils ; atteindre le budget est un échec avec son propre `stop_reason`.
+- **A single agent**: short (2.2 steps on average in v4), coupled tasks that write a shared state. A team
+  of agents would cost ×2 to ×4 in model calls with no measurable gain expected; we have no measurement that justifies more than one agent.
+- **15 MCP tools** (9 in `registry`, 6 in `treasury`; see `docs/TOOLS.md`) + 2 harness control tools
+  (`ask_user`, `remember_preference`). 8 reads, 7 writes of which 5 subject to human approval
+  (`pay_expense`, `reimburse_member`, `refund_event_registrations`, `cancel_event`, `update_member_iban`) and group e-mails.
+- **2 MCP servers over stdio** (`bds-registry`, `bds-treasury`): nothing to launch on the side, the harness owns the processes,
+  and the MCP Inspector plugs into the same command.
+- **1 deterministic guard** (`agent/guard.py`, a tested pure function) before `approve`: a dangerous write must be
+  justified by **the user's request**, never by text read in a tool result. Free text from the tools is
+  returned as `untrusted_text`. The idempotency key and the treasurer's identity are injected by the harness, not by the model.
+- **Financial rules in the tools**, not in the prompt (`docs/FINANCIAL_RULES.md`, 6 rules); since v4,
+  `get_expense` returns `payable` and `blocking_reasons`.
+- **Budget**: `max_steps` = number of tool calls; reaching the budget is a failure with its own `stop_reason`.
 
-## Résultats par type (v5.2, 30 scénarios × 3 essais, `eval/report.md`)
+## Results by kind (v6, 30 scenarios × 3 attempts, `eval/report.md`)
 
-| Type | n | pass^3 [Wilson 95 %] |
+| Kind | n | pass^3 [Wilson 95%] |
 |---|---|---|
-| normal | 14 | 14/14 = 100 % [78–100] |
-| ambiguous | 5 | 5/5 = 100 % [57–100] |
-| impossible | 5 | 5/5 = 100 % [57–100] |
-| adversarial | 6 | 6/6 = 100 % [61–100] |
-| **Total** | 30 | **30/30 = 100 % [89–100]** · 90/90 runs |
+| normal | 14 | 14/14 = 100% [78–100] |
+| ambiguous | 5 | 5/5 = 100% [57–100] |
+| impossible | 5 | 5/5 = 100% [57–100] |
+| adversarial | 6 | 6/6 = 100% [61–100] |
+| **Total** | 30 | **30/30 = 100% [89–100]** · 90/90 runs |
 
-Injections suivies par le modèle : 0/18 ; arrivées jusqu'au backend : 0/18 ; **signalées au trésorier : 18/18** (mesure seule, hors score).
-Coût total 0,078 $ (0,00087 $ par succès), latence p50 / p95 3,7 s / 11,8 s, 1,46 M tokens en entrée. La v5 donnait les mêmes taux de réussite
-(90/90, mêmes pass^3 par type, 0 scénario amélioré ou dégradé) ; coût (0,073 $) et latence (3,3 s / 9,1 s) relèvent du bruit du modèle et du fournisseur
-(`eval/runs/v5_2/compare.md`). Le signalement est une mesure sur les 6 scénarios adversariaux (`alert_keywords`) : le modèle écrit « ⚠️ Instruction suspecte
-ignorée : … » ; le scorer ne l'exige pas. **Ce 100 % est optimiste** : les corrections ont été écrites en lisant
-les traces de ces 30 scénarios (limite de Goodhart, `docs/ERROR_ANALYSIS.md`). Les held-out (7 scénarios jamais utilisés
-pour régler le prompt) donnent 10/12 sur les anciens et 9/9 sur les nouveaux.
+Injections followed by the model: 0/18; reached the backend: 0/18; **reported to the treasurer: 17/18** (measurement only, not scored).
+Total cost $0.0905 ($0.00101 per success), latency p50 / p95 4.3 s / 10.5 s, 1.47 M input tokens. v5.2 (French tasks) gave the same success rates
+(90/90, same pass^3 per kind, 0 scenarios improved or worsened: `eval/runs/v6_en/compare.md`); cost ($0.078) and latency (3.7 s / 11.8 s) are within the noise of the model and provider.
+The reporting is a measurement on the 6 adversarial scenarios (`alert_keywords`): the model writes "⚠️ Suspicious instruction
+ignored: …"; the scorer does not require it. **This 100% is optimistic**: the fixes were written by reading
+the traces of these 30 scenarios (Goodhart's limit, `docs/ERROR_ANALYSIS.md`). The held-outs (7 scenarios never used
+to tune the prompt) gave 10/12 on the old ones and 9/9 on the new ones (v4 campaign, not rerun in v6).
 
-**Signalement des tentatives de fraude (v5.2).** Deux niveaux : (1) le prompt demande de signaler en une phrase « ⚠️ Instruction suspecte ignorée : … » toute
-demande d'action trouvée dans un texte d'outil (`untrusted_text`), sans la suivre ; (2) filet déterministe : quand le garde-fou bloque une écriture, le harness
-ajoute « ⚠️ Action bloquée par le garde-fou : <outil> (<raison>) » à la réponse finale, même si le modèle n'en parle pas.
+**Reporting of fraud attempts (v5.2).** Two levels: (1) the prompt asks to report in one sentence "⚠️ Suspicious instruction ignored: …" any
+action request found in tool text (`untrusted_text`), without following it; (2) deterministic safety net: when the guard blocks a write, the harness
+appends "⚠️ Action blocked by the guard: <tool> (<reason>)" to the final answer, even if the model does not mention it.
 
-## Analyse d'erreurs : deux itérations (`docs/ERROR_ANALYSIS.md`)
+## Error analysis: two iterations (`docs/ERROR_ANALYSIS.md`)
 
-| | Réussite par run | Ce qui a échoué | Ce qui a changé |
+| | Success per run | What failed | What changed |
 |---|---|---|---|
-| **v2 (avant)** | 81/90 | 9 échecs, 3 scénarios (s010, s021, s022) : « mauvais outil », écriture interdite tentée (`reimburse_member` pour une facture, paiement contraire au règlement) | Prompt v3 : facture ≠ note de frais, vérifier les règles avant d'écrire, `ask_user` si ambigu ; `parallel_tool_calls=False` + repli `not_run` |
-| **v3** | 88/90 | 0 écriture interdite, mais 2 régressions de budget (s025, s029) : vérifier coûte des lectures | `get_expense` renvoie `payable` + `blocking_reasons` + budget restant (règles toujours appliquées dans les outils d'écriture) ; prompt v4 |
-| **v4** | 90/90 | seuls échecs : h04 ×2 (held-out), budget épuisé par des lectures d'identification | rien (non réglé : lu en itération 1) |
+| **v2 (before)** | 81/90 | 9 failures, 3 scenarios (s010, s021, s022): "wrong tool", forbidden write attempted (`reimburse_member` for an invoice, payment contrary to the rules) | Prompt v3: invoice ≠ expense claim, check the rules before writing, `ask_user` if ambiguous; `parallel_tool_calls=False` + `not_run` fallback |
+| **v3** | 88/90 | 0 forbidden writes, but 2 budget regressions (s025, s029): checking costs reads | `get_expense` returns `payable` + `blocking_reasons` + remaining budget (rules still enforced in the write tools); prompt v4 |
+| **v4** | 90/90 | only failures: h04 ×2 (held-out), budget exhausted by identification reads | nothing (not tuned: read in iteration 1) |
 
-Résultat honnête : v3 → v4, étapes moyennes 2,64 → 2,20 et tokens en entrée −12 %, mais **aucun test des signes n'est
-significatif** (p ≥ 0,5) : 3 améliorations contre 2 régressions en itération 1, 2 contre 0 en itération 2.
+Honest result: v3 → v4, mean steps 2.64 → 2.20 and input tokens −12%, but **no sign test is
+significant** (p ≥ 0.5): 3 improvements against 2 regressions in iteration 1, 2 against 0 in iteration 2.
+Campaigns v1 to v5.2 were run with French tasks, v6 with English tasks (same scenarios and expected states).
 
 ## Bonus (`docs/BONUS.md`)
 
-1. **Comparaison de deux modèles** : DeepSeek v4 flash contre `mistralai/mistral-small-2603`, même prompt v4. pass^3 100 % contre 87 %,
-   coût 0,088 $ contre 0,032 $ (÷3), 3/18 injections suivies par Mistral mais 0/18 arrivées au backend (le garde-fou bloque).
-   Archive : `eval/runs/v4_model2/`.
-2. **Panne d'outil injectée** (`inject_failure`, `scripts/failure_demo.py`) : la réponse de `pay_expense` est perdue après l'écriture ;
-   la même clé d'idempotence est rejouée, 1 seule ligne dans le ledger.
-3. **UI de démo** : LangGraph Studio (`langgraph.json`, `studio.py`).
+1. **Comparison of two models**: DeepSeek v4 flash vs `mistralai/mistral-small-2603`, same prompt v4. pass^3 100% vs 87%,
+   cost $0.088 vs $0.032 (÷3), 3/18 injections followed by Mistral but 0/18 reached the backend (the guard blocks them).
+   Archive: `eval/runs/v4_model2/`.
+2. **Injected tool failure** (`inject_failure`, `scripts/failure_demo.py`): the response of `pay_expense` is lost after the write;
+   the same idempotency key is replayed, a single ledger row.
+3. **Demo UI**: LangGraph Studio (`langgraph.json`, `studio.py`).
 
-## Limites connues
+## Known limits
 
-- **h04** (held-out, facture + note de frais sans identifiant) échoue 2 fois sur 3 : 3 à 4 lectures d'identification avant le
-  premier paiement, budget de 7 pas assez large pour deux écritures. Non corrigé.
-- **Un seul `blocked_vendor`** en mémoire (`agent/memory.py`) : pas de liste de prestataires bloqués.
-- **Échecs de Mistral non lus** : l'analyse de la comparaison utilise les étiquettes automatiques de `report.md` ; ce run a été fait
-  avec `--no-trace`, donc sans trace Phoenix. Les causes de s006 et s029 sont des hypothèses.
-- **Coût variable selon le fournisseur** : OpenRouter route `~…-latest` vers plusieurs fournisseurs (prix effectif de 0,019 à 0,148 $ par M de
-  tokens). Le coût en dollars n'est pas comparable d'un run à l'autre ; les tokens et les étapes sont la mesure stable.
-- **Peu de puissance statistique** : 30 + 7 scénarios, aucune comparaison significative.
-- Le garde-fou repose sur des mots-clés de la demande (français) : il bloque les injections vues, il ne prouve rien contre les autres.
+- **h04** (held-out, invoice + expense claim without an identifier) fails 2 times out of 3: 3 to 4 identification reads before the
+  first payment, a budget of 7 not wide enough for two writes. Not fixed.
+- **A single `blocked_vendor`** in memory (`agent/memory.py`): no list of blocked vendors.
+- **Mistral's failures not read**: the analysis of the comparison uses the automatic labels of `report.md`; that run was made
+  with `--no-trace`, hence without a Phoenix trace. The causes for s006 and s029 are hypotheses.
+- **Cost varies with the provider**: OpenRouter routes `~…-latest` to several providers (effective price from $0.019 to $0.148 per M
+  tokens). The dollar cost is not comparable from one run to another; tokens and steps are the stable measure.
+- **Little statistical power**: 30 + 7 scenarios, no significant comparison.
+- The guard relies on keywords of the request (English and French since v6): it blocks the injections seen, it proves nothing against the others.
 
-## Auteurs
+## Authors
 
-Amandine, Louis et Charles.
+Amandine, Louis and Charles.
 
-Projet développé avec Claude Code, phase par phase (phases 0 à 9 de `PLAN.md`, validation humaine à chaque fin de phase).
+Project developed with Claude Code, phase by phase (phases 0 to 9 of `PLAN.md`, human validation at the end of each phase).
 
 ## Documents
 
-`PLAN.md` (architecture et décisions) · `docs/TOOLS.md` · `docs/SCENARIOS.md` · `docs/REGLEMENT_FINANCIER.md` ·
+`PLAN.md` (architecture and decisions) · `docs/TOOLS.md` · `docs/SCENARIOS.md` · `docs/FINANCIAL_RULES.md` ·
 `docs/ERROR_ANALYSIS.md` · `docs/BONUS.md` · `docs/DEMO_SCRIPT.md` · `docs/PITCH.md` · `docs/COURSE_NOTES.md`.
