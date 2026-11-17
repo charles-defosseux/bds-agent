@@ -211,3 +211,20 @@ def test_refund_budget_too_low_changes_nothing(db):
 
 def test_refund_unknown_event(db):
     fails("not_found", t.refund_event_registrations, "EV99", "k1", ACTOR)
+
+
+# ---- held-out seed (phase 7): the impossible held-out cases are really refused by the tools -----------------------------
+@pytest.fixture
+def heldout_db(tmp_path, monkeypatch):
+    from pathlib import Path
+    from backend.reset import reset
+    path = tmp_path / "bds.db"
+    reset(Path(__file__).resolve().parents[1] / "seeds" / "heldout.json", path)
+    monkeypatch.setenv("BDS_DB_PATH", str(path))
+    return path
+
+
+def test_heldout_impossible_cases_are_refused(heldout_db):
+    assert "blocked" in fails("permission_denied", t.pay_expense, "E-024", "k1", ACTOR)["message"]  # h02: vendor blocked
+    assert "receipt" in fails("conflict", t.reimburse_member, "E-025", "k2", ACTOR)["message"]      # h03: no receipt
+    assert len(read_state(heldout_db)["ledger"]) == 2  # only the two seed lines

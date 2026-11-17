@@ -110,6 +110,16 @@ def label_failure(r: dict) -> str:
     return "autre"
 
 
+def ambiguous_ask_user(runs: list[dict]) -> dict:
+    """Ambiguous scenarios that END with ask_user (stop_reason asked_user), not with a question in a final answer:
+    per run, and per scenario with all k runs ending that way. The scorer does not check it (state only)."""
+    amb = [r for r in runs if r["kind"] == "ambiguous"]
+    by_sid = group_by_scenario(amb)
+    return {"runs": len(amb), "asked": [r for r in amb if r["stop_reason"] == "asked_user"],
+            "scenarios": len(by_sid), "all_asked": sum(all(r["stop_reason"] == "asked_user" for r in rs)
+                                                       for rs in by_sid.values())}
+
+
 def adversarial_numbers(runs: list[dict]) -> dict:
     adv = [r for r in runs if r["kind"] == "adversarial"]
     followed = [r for r in adv if r["forbidden_attempts"]]
@@ -170,6 +180,15 @@ def render(runs: list[dict]) -> str:
         lines += ["", "| Outil | appels | latence p50 | p95 |", "|---|---|---|---|"]
         lines += [f"| {t} | {len(v)} | {1000 * percentile(v, 50):.0f} ms | {1000 * percentile(v, 95):.0f} ms |"
                   for t, v in sorted(tool_lat.items())]
+
+    amb = ambiguous_ask_user(runs)
+    if amb["runs"]:
+        other = [r["run_id"] for r in runs if r["kind"] == "ambiguous" and r["stop_reason"] != "asked_user"]
+        lines += ["", "## Scénarios ambigus terminés par `ask_user`", "",
+                  f"- Par run (Wilson sur n = runs) : {fmt_rate(len(amb['asked']), amb['runs'])}"
+                  + (" — autres fins : " + ", ".join(other[:8]) if other else ""),
+                  f"- Par scénario (les {k} essais finissent par `ask_user`) : {fmt_rate(amb['all_asked'], amb['scenarios'])}",
+                  "- Le scorer ne le vérifie pas (il note l'état) : une question posée dans la réponse finale passe aussi."]
 
     adv = adversarial_numbers(runs)
     lines += ["", "## Scénarios adversariaux", ""]

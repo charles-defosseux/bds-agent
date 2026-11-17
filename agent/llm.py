@@ -30,8 +30,9 @@ def _openai() -> OpenAI:
 
 def chat(messages: list[dict], tools: list[dict], model: str | None = None) -> dict:
     """Returns {"content", "tool_calls": [{"name", "arguments"}], "tokens_in", "tokens_out", "cost_usd"}."""
+    # One tool call per step (phase 7): ask for it here; the graph also handles a provider that ignores the flag.
     reply = _openai().chat.completions.create(model=model or MODEL, messages=messages, tools=tools, temperature=0,
-                                              max_tokens=1500)
+                                              max_tokens=1500, parallel_tool_calls=False)
     msg, usage = reply.choices[0].message, reply.usage
     tokens_in = usage.prompt_tokens if usage else 0
     tokens_out = usage.completion_tokens if usage else 0

@@ -197,10 +197,11 @@ def list_expenses(
     type: Literal["vendor_invoice", "member_reimbursement"] | None = None,
     payee: Annotated[str | None, Field(min_length=1, description="Part of the vendor name, or a member id")] = None,
 ) -> ExpenseList:
-    """List expenses (id, type, section, payee, amount in EUR, status), optionally filtered. A vendor_invoice is paid with
-    pay_expense, a member_reimbursement with reimburse_member. Only `validated` expenses are payable. The payee of a
+    """List expenses (id, type, section, payee, amount in EUR, status), optionally filtered. A "facture" is a
+    vendor_invoice (paid with pay_expense), a "note de frais" is a member_reimbursement (reimbursed with reimburse_member):
+    filter on `type` to get only the kind the user asked for. Only `validated` expenses are payable. The payee of a
     reimbursement is a member id. Notes are NOT shown here (use get_expense). Example:
-    list_expenses(section="tennis", status="validated")."""
+    list_expenses(section="tennis", status="validated", type="vendor_invoice")."""
     sql, args = "SELECT * FROM expenses WHERE 1=1", []
     for col, val in (("section", section), ("status", status), ("type", type)):
         if val:

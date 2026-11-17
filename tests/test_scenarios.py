@@ -1,4 +1,4 @@
-"""Consistency of eval/scenarios.jsonl with seeds/base.json. No model, no agent: catches grader-side bugs early.
+"""Consistency of eval/scenarios.jsonl (seeds/base.json) and eval/heldout.jsonl (seeds/heldout.json) with their seeds. No model, no agent: catches grader-side bugs early.
 
 expect_state is a diff against the seed (see docs/SCENARIOS.md). These tests check that every diff only
 references rows that exist, really changes them, and that the money adds up (budgets, ledger, statuses).
@@ -18,6 +18,9 @@ from backend.state import read_state
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = [json.loads(line) for line in (ROOT / "eval/scenarios.jsonl").read_text(encoding="utf-8").splitlines() if line]
 BY_ID = {s["id"]: s for s in SCENARIOS}
+# Held-out scenarios (phase 7): same error families as the failures of v1, on different cases. Never tuned on.
+HELDOUT = [json.loads(line) for line in (ROOT / "eval/heldout.jsonl").read_text(encoding="utf-8").splitlines() if line]
+ALL = SCENARIOS + HELDOUT
 
 WRITES = {"record_dues_payment", "pay_expense", "reimburse_member", "refund_event_registrations", "cancel_event",
           "update_member_iban", "send_email", "remember_preference"}
@@ -31,10 +34,9 @@ DIFF_TABLES = {"sections": "name", "members": "id", "events": "id", "expenses": 
 OUTFLOW = {"expense_payment", "reimbursement", "event_refund"}
 
 
-@pytest.fixture(scope="module")
-def seed_state(tmp_path_factory):
+def _load_seed(seed: str, tmp_path_factory) -> dict:
     path = tmp_path_factory.mktemp("db") / "bds.db"
-    reset(ROOT / "seeds/base.json", path)
+    reset(ROOT / seed, path)
     state = read_state(path)
     return {
         **{t: {row[k]: row for row in state[t]} for t, k in DIFF_TABLES.items()},
@@ -44,15 +46,44 @@ def seed_state(tmp_path_factory):
     }
 
 
+@pytest.fixture(scope="module")
+def seeds(tmp_path_factory):
+    """Every seed used by a scenario, loaded once: {seed path: state indexed by key}."""
+    return {seed: _load_seed(seed, tmp_path_factory) for seed in sorted({s["seed"] for s in ALL})}
+
+
+@pytest.fixture(scope="module")
+def seed_state(seeds):
+    return seeds["seeds/base.json"]
+
+
 # ---- file shape ------------------------------------------------------------------------------------------------
 def test_counts_and_ids():
     assert len(SCENARIOS) == 30
     assert len(BY_ID) == 30, "duplicate scenario id"
     assert all(re.fullmatch(r"s\d{3}", s["id"]) for s in SCENARIOS)
     assert Counter(s["kind"] for s in SCENARIOS) == {"normal": 14, "ambiguous": 5, "impossible": 5, "adversarial": 6}
+    assert all(s["seed"] == "seeds/base.json" for s in SCENARIOS)
 
 
-@pytest.mark.parametrize("scn", SCENARIOS, ids=lambda s: s["id"])
+def test_heldout_is_separate():
+    """Held-out ids and tasks never overlap the 30 tuned scenarios."""
+    assert len(HELDOUT) == 4 and len({s["id"] for s in HELDOUT}) == 4
+    assert all(re.fullmatch(r"h\d{2}", s["id"]) for s in HELDOUT)
+    assert not {s["task"] for s in HELDOUT} & {s["task"] for s in SCENARIOS}
+
+
+def test_heldout_seed_only_adds_expenses():
+    """seeds/heldout.json = seeds/base.json + new expense rows: the 30 scenarios (on base.json) are unaffected."""
+    base = json.loads((ROOT / "seeds/base.json").read_text(encoding="utf-8"))
+    held = json.loads((ROOT / "seeds/heldout.json").read_text(encoding="utf-8"))
+    assert {t: v for t, v in held.items() if t != "expenses"} == {t: v for t, v in base.items() if t != "expenses"}
+    n = len(base["expenses"])
+    assert held["expenses"][:n] == base["expenses"]
+    assert {e["id"] for e in held["expenses"][n:]} == {"E-023", "E-024", "E-025", "E-026", "E-027"}
+
+
+@pytest.mark.parametrize("scn", ALL, ids=lambda s: s["id"])
 def test_fields(scn):
     assert REQUIRED <= set(scn) <= REQUIRED | OPTIONAL
     assert (ROOT / scn["seed"]).is_file()
@@ -67,13 +98,13 @@ def test_fields(scn):
             assert set(call) == {"tool", "args"} and call["args"]
 
 
-@pytest.mark.parametrize("scn", [s for s in SCENARIOS if s["kind"] in ("ambiguous", "impossible")], ids=lambda s: s["id"])
+@pytest.mark.parametrize("scn", [s for s in ALL if s["kind"] in ("ambiguous", "impossible")], ids=lambda s: s["id"])
 def test_do_nothing_kinds_forbid_every_write(scn):
     assert scn["expect_state"] == {}
     assert WRITES <= {c for c in scn["forbid_calls"] if isinstance(c, str)}
 
 
-@pytest.mark.parametrize("scn", [s for s in SCENARIOS if s["kind"] in ("normal", "adversarial")], ids=lambda s: s["id"])
+@pytest.mark.parametrize("scn", [s for s in ALL if s["kind"] in ("normal", "adversarial")], ids=lambda s: s["id"])
 def test_expected_write_tools_are_not_forbidden_by_name(scn):
     """A normal/adversarial task must leave room for the writes it needs; every other write is forbidden."""
     expect = scn["expect_state"]
@@ -95,8 +126,9 @@ def test_expected_write_tools_are_not_forbidden_by_name(scn):
 
 
 # ---- expect_state against the seed ----------------------------------------------------------------------------
-@pytest.mark.parametrize("scn", SCENARIOS, ids=lambda s: s["id"])
-def test_diff_references_existing_rows_and_changes_them(scn, seed_state):
+@pytest.mark.parametrize("scn", ALL, ids=lambda s: s["id"])
+def test_diff_references_existing_rows_and_changes_them(scn, seeds):
+    seed_state = seeds[scn["seed"]]
     expect = scn["expect_state"]
     assert set(expect) <= set(DIFF_TABLES) | {"registrations", "ledger_new", "outbox_new"}
     for table in [*DIFF_TABLES, "registrations"]:
@@ -114,9 +146,10 @@ def test_diff_references_existing_rows_and_changes_them(scn, seed_state):
             assert call["args"]["expense_id"] in seed_state["expenses"]
 
 
-@pytest.mark.parametrize("scn", SCENARIOS, ids=lambda s: s["id"])
-def test_money_adds_up(scn, seed_state):
+@pytest.mark.parametrize("scn", ALL, ids=lambda s: s["id"])
+def test_money_adds_up(scn, seeds):
     """Every new ledger row matches a status change, and section budgets = seed - outflows."""
+    seed_state = seeds[scn["seed"]]
     expect = scn["expect_state"]
     outflow = defaultdict(float)
     for row in expect.get("ledger_new", []):
@@ -154,7 +187,9 @@ def test_money_adds_up(scn, seed_state):
 
 
 # ---- the seed itself ------------------------------------------------------------------------------------------
-def test_seed_is_coherent(seed_state):
+@pytest.mark.parametrize("seed", ["seeds/base.json", "seeds/heldout.json"])
+def test_seed_is_coherent(seed, seeds):
+    seed_state = seeds[seed]
     members = seed_state["members"]
     assert len(members) == 20 and len(seed_state["events"]) == 6
     ibans = [m["iban"] for m in members.values()] + [e["vendor_iban"] for e in seed_state["expenses"].values() if e["vendor_iban"]]

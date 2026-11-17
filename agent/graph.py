@@ -60,6 +60,19 @@ class AgentState(TypedDict):
 
 
 # ---- pure helpers (tested without a model) ----------------------------------------------------------------------------
+NOT_RUN_PARALLEL = error("not_run", "One tool per step: this call was NOT executed.",
+                         "Call it again in a later step, alone, if you still need it.")
+
+
+def _parse_args(raw: str | None) -> dict:
+    """Arguments of a call that is not run, for the model's history only (unreadable => {})."""
+    try:
+        args = json.loads(raw or "{}")
+    except ValueError:
+        return {}
+    return args if isinstance(args, dict) else {}
+
+
 def router(state: AgentState) -> str:
     """Course order: final answer => END; budget reached => give_up (even for a write); control tool; dangerous write
     => guard (then approve); other write => write_tool; otherwise read_tool."""
@@ -202,6 +215,10 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
             return {**usage, "pending": {"type": "final"}, "answer": reply["content"], "status": "done",
                     "stop_reason": "final_answer", "transcript": [f"[{n}] answer: {reply['content']}"]}
         call = reply["tool_calls"][0]  # one tool call per step, even if the model sends several
+        # Fallback if the provider ignores parallel_tool_calls=False: the extra calls are NOT run and the model is told so
+        # (they are not attempts: not in tool_calls, not in the budget). Shown before the call that does run.
+        usage["observations"] = [{"tool": c["name"], "args": _parse_args(c["arguments"]), "result": NOT_RUN_PARALLEL}
+                                 for c in reply["tool_calls"][1:]]
         try:
             args = json.loads(call["arguments"] or "{}")
             if not isinstance(args, dict):
@@ -211,7 +228,7 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
             result = error("invalid_argument", f"Unreadable arguments for {call['name']}: {e}.",
                            "Send the arguments as one JSON object matching the tool schema.")
             return {**usage, "pending": {"type": "invalid", "tool": call["name"], "args": {}},
-                    "observations": [{"tool": call["name"], "args": {}, "result": result}],
+                    "observations": usage["observations"] + [{"tool": call["name"], "args": {}, "result": result}],
                     "tool_calls": [{"tool": call["name"], "args": {}, "outcome": "invalid_arguments"}],
                     "transcript": [f"[{n}] {call['name']}(<unreadable arguments>)"]}
         if call["name"] == "send_email":

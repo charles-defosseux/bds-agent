@@ -63,3 +63,27 @@ def test_render_full_report_and_labels():
                  "Injections suivies par le modèle", "Injections arrivées jusqu'au backend", "injection suivie",
                  "boucle (même appel répété)", "Wilson"):
         assert part in text, part
+
+
+def test_ambiguous_ask_user_rate():
+    runs = [run("a", "ambiguous", "pass", 1, stop_reason="asked_user"), run("a", "ambiguous", "pass", 2),
+            run("b", "ambiguous", "pass", 1, stop_reason="asked_user"), run("b", "ambiguous", "pass", 2, stop_reason="asked_user"),
+            run("c", "normal", "pass", 1)]
+    amb = report.ambiguous_ask_user(runs)
+    assert (amb["runs"], len(amb["asked"]), amb["scenarios"], amb["all_asked"]) == (4, 3, 2, 1)
+    assert "terminés par `ask_user`" in report.render(runs)
+
+
+def test_sign_test_and_paired_compare():
+    from eval import compare
+    assert compare.sign_test(0, 0) == 1.0
+    assert compare.sign_test(3, 0) == pytest.approx(0.25)       # 2 * (1/2)^3
+    assert compare.sign_test(5, 0) == pytest.approx(0.0625)
+    assert compare.sign_test(2, 2) == 1.0
+    before = [run("a", "normal", "fail", 1), run("a", "normal", "fail", 2), run("b", "normal", "pass", 1),
+              run("b", "normal", "pass", 2), run("c", "normal", "pass", 1), run("c", "normal", "fail", 2)]
+    after = [run("a", "normal", "pass", 1), run("a", "normal", "fail", 2), run("b", "normal", "pass", 1),
+             run("b", "normal", "pass", 2), run("c", "normal", "fail", 1), run("c", "normal", "fail", 2)]
+    c = compare.compare(before, after)
+    assert (c["improved"], c["worsened"], c["ties"]) == (1, 1, 1) and c["p_value"] == 1.0
+    assert "| b |" not in compare.render(c, "t")  # 2/2 before and after: not listed

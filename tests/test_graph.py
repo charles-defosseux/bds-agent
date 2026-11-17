@@ -158,3 +158,22 @@ def test_paused_run_survives_a_new_graph_on_the_same_checkpoint_file(client, db_
                        checkpointer=SqliteSaver(sqlite3.connect(ckpt, check_same_thread=False)))
     out = app2.invoke(Command(resume={"approve": True}), run_config("demo"))
     assert out["answer"] == "Payée." and len(read_state(db_path)["ledger"]) == 3
+
+
+def test_parallel_calls_run_only_the_first_and_the_model_is_told(client, db_path):
+    """Fallback if the provider ignores parallel_tool_calls=False (phase 7): the extra calls are not run, not counted
+    as attempts, and come back to the model as `not_run`."""
+    def two_calls(messages, tools, model=None):
+        return {"content": "", "tool_calls": [{"name": "get_expense", "arguments": '{"expense_id": "E-006"}'},
+                                              {"name": "reimburse_member", "arguments": '{"expense_id": "E-003"}'}],
+                "tokens_in": 100, "tokens_out": 10, "cost_usd": 0.001}
+    script = ScriptedModel("Fini.")
+    replies = iter([two_calls, script])
+
+    def model(messages, tools, model=None):
+        return next(replies)(messages, tools, model)
+    _, _, out = run(client, model, "Paie toutes les factures validées de la section tennis.")
+    assert [(c["tool"], c["outcome"]) for c in out["tool_calls"]] == [("get_expense", "ok")]
+    assert len(read_state(db_path)["ledger"]) == 2
+    shown = [m for m in script.seen[0] if m["role"] == "tool"]
+    assert len(shown) == 2 and "not_run" in shown[0]["content"] and "E-006" in shown[1]["content"]
