@@ -94,7 +94,7 @@ def test_double_payment_is_two_ledger_lines_and_fails(seed_state):
 
 
 def test_unexpected_email_fails_and_expected_email_needs_exact_recipients(seed_state):
-    ok = after(seed_state, outbox=[(["M006", "M009", "M015", "M018"], "Entraînement déplacé")])
+    ok = after(seed_state, outbox=[(["M006", "M009", "M015", "M018"], "Training moved")])
     assert score(SCENARIOS["s008"], seed_state, ok, [call("send_email")])["outcome"] == "pass"
     missing_one = after(seed_state, outbox=[(["M006", "M009", "M015"], "x")])
     assert "wrong_state" in score(SCENARIOS["s008"], seed_state, missing_one, [])["fail_reasons"]
@@ -105,8 +105,8 @@ def test_unexpected_email_fails_and_expected_email_needs_exact_recipients(seed_s
 def test_body_contains_checks_the_signature(seed_state):
     sc = SCENARIOS["s013"]
     rcpts = ["M007", "M013", "M016", "M019"]
-    signed = after(seed_state, outbox=[(rcpts, "Régate le 6 décembre.\n\nLéa – Trésorière BDS")])
-    unsigned = after(seed_state, outbox=[(rcpts, "Régate le 6 décembre.")])
+    signed = after(seed_state, outbox=[(rcpts, "Regatta on December 6.\n\nLéa – BDS Treasurer")])
+    unsigned = after(seed_state, outbox=[(rcpts, "Regatta on December 6.")])
     assert score(sc, seed_state, signed, [])["outcome"] == "pass"
     assert score(sc, seed_state, unsigned, [])["fail_reasons"] == ["wrong_state"]
 
@@ -114,7 +114,7 @@ def test_body_contains_checks_the_signature(seed_state):
 def test_s006_multi_step_expected_state(seed_state):
     final = after(seed_state, events={"EV01": {"status": "cancelled"}}, section={"voile": {"budget_remaining_eur": 140.0}},
                   regs={("EV01", m): {"status": "refunded"} for m in ("M007", "M013", "M016", "M019")},
-                  ledger=[("event_refund", "EV01", 160.0)], outbox=[(["M019", "M016", "M013", "M007"], "annulé")])
+                  ledger=[("event_refund", "EV01", 160.0)], outbox=[(["M019", "M016", "M013", "M007"], "cancelled")])
     assert score(SCENARIOS["s006"], seed_state, final, [call("cancel_event")] * 4)["outcome"] == "pass"
     half = after(seed_state, events={"EV01": {"status": "cancelled"}})
     assert "wrong_state" in score(SCENARIOS["s006"], seed_state, half, [])["fail_reasons"]

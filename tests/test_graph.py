@@ -57,7 +57,7 @@ def run(client, model, task, thread="t1", max_steps=4, checkpointer=None, intera
 
 def test_payment_pauses_for_a_human_then_runs_once_approved(client, db_path):
     model = ScriptedModel(("get_expense", {"expense_id": "E-001"}), ("pay_expense", {"expense_id": "E-001"}),
-                          "Facture E-001 payée.")
+                          "Invoice E-001 paid.")
     app, config, out = run(client, model, "Paie la facture E-001 de Voiles Atlantique.")
     payload = out["__interrupt__"][0].value
     assert payload["tool"] == "pay_expense" and payload["amount_eur"] == 120.0
@@ -66,7 +66,7 @@ def test_payment_pauses_for_a_human_then_runs_once_approved(client, db_path):
     assert len(read_state(db_path)["ledger"]) == 2  # nothing happened before the human decided
 
     out = app.invoke(Command(resume={"approve": True, "reason": "ok"}), config)
-    assert out["stop_reason"] == "final_answer" and out["answer"] == "Facture E-001 payée."
+    assert out["stop_reason"] == "final_answer" and out["answer"] == "Invoice E-001 paid."
     state = read_state(db_path)
     assert len(state["ledger"]) == 3 and state["ledger"][-1]["actor_id"] == "M001"
     assert [c["outcome"] for c in out["tool_calls"]] == ["ok", "ok"]
@@ -75,11 +75,11 @@ def test_payment_pauses_for_a_human_then_runs_once_approved(client, db_path):
 
 
 def test_human_rejection_reaches_the_model_and_changes_nothing(client, db_path):
-    model = ScriptedModel(("pay_expense", {"expense_id": "E-009"}), "Paiement refusé par la validation humaine.")
+    model = ScriptedModel(("pay_expense", {"expense_id": "E-009"}), "Payment refused by the human approval.")
     app, config, out = run(client, model, "Paie la facture E-009 de Location Kayak.")
-    out = app.invoke(Command(resume={"approve": False, "reason": "facture contestée"}), config)
+    out = app.invoke(Command(resume={"approve": False, "reason": "invoice disputed"}), config)
     assert out["tool_calls"] == [{"tool": "pay_expense", "args": {"expense_id": "E-009"}, "outcome": "rejected_by_human",
-                                  "reason": "facture contestée"}]
+                                  "reason": "invoice disputed"}]
     last_tool_msg = model.seen[-1][-1]
     assert last_tool_msg["role"] == "tool" and "Rejected by the human" in last_tool_msg["content"]
     assert len(read_state(db_path)["ledger"]) == 2
@@ -113,24 +113,24 @@ def test_untrusted_text_is_framed_in_the_model_context(client):
 def test_ask_user_ends_the_run_without_changing_anything(client, db_path):
     before = read_state(db_path)
     model = ScriptedModel(("search_members", {"query": "Thomas"}),
-                          ("ask_user", {"question": "Quel Thomas : Foussard ou Moreau ?"}))
-    _, _, out = run(client, model, "Rembourse la note de frais de Thomas.")
-    assert out["stop_reason"] == "asked_user" and out["answer"] == "Quel Thomas : Foussard ou Moreau ?"
+                          ("ask_user", {"question": "Which Thomas: Foussard or Moreau?"}))
+    _, _, out = run(client, model, "Reimburse Thomas's expense claim.")
+    assert out["stop_reason"] == "asked_user" and out["answer"] == "Which Thomas: Foussard or Moreau?"
     assert [c["tool"] for c in out["tool_calls"]] == ["search_members", "ask_user"]
     assert read_state(db_path) == before
 
 
 def test_interactive_question_pauses_then_the_agent_acts_on_the_answer(client, db_path):
     model = ScriptedModel(("search_members", {"query": "Thomas"}),
-                          ("ask_user", {"question": "Quel Thomas : Foussard ou Moreau ?"}),
-                          ("reimburse_member", {"expense_id": "E-010"}), "Note E-010 remboursée.")
-    app, config, out = run(client, model, "Rembourse la note de frais de Thomas.", interactive=True)
-    assert out["__interrupt__"][0].value == {"question": "Quel Thomas : Foussard ou Moreau ?"}
+                          ("ask_user", {"question": "Which Thomas: Foussard or Moreau?"}),
+                          ("reimburse_member", {"expense_id": "E-010"}), "Claim E-010 reimbursed.")
+    app, config, out = run(client, model, "Reimburse Thomas's expense claim.", interactive=True)
+    assert out["__interrupt__"][0].value == {"question": "Which Thomas: Foussard or Moreau?"}
     assert "stop_reason" not in out or out["stop_reason"] is None
     assert len(read_state(db_path)["ledger"]) == 2  # nothing written yet
 
     out = app.invoke(Command(resume="Thomas Foussard"), config)  # free text, not a decision
-    assert model.seen[-1][-1]["content"].count("Réponse de l'utilisateur : Thomas Foussard") == 1
+    assert model.seen[-1][-1]["content"].count("User’s answer: Thomas Foussard") == 1
     payload = out["__interrupt__"][0].value  # the agent went back to think, then asked for the approval
     assert payload["tool"] == "reimburse_member" and "Thomas Foussard" in payload["beneficiary"]
     assert len(read_state(db_path)["ledger"]) == 2
@@ -149,15 +149,15 @@ def test_interactive_question_counts_in_the_budget(client):
 
 
 def test_interactive_final_question_is_treated_as_ask_user(client, db_path):
-    q = "Quel Thomas : Foussard ou Moreau ?"
+    q = "Which Thomas: Foussard or Moreau?"
     model = ScriptedModel(("search_members", {"query": "Thomas"}), q,
-                          ("reimburse_member", {"expense_id": "E-010"}), "Note E-010 remboursée.")
-    app, config, out = run(client, model, "Rembourse la note de frais de Thomas.", interactive=True)
+                          ("reimburse_member", {"expense_id": "E-010"}), "Claim E-010 reimbursed.")
+    app, config, out = run(client, model, "Reimburse Thomas's expense claim.", interactive=True)
     assert out["__interrupt__"][0].value == {"question": q}
     assert len(read_state(db_path)["ledger"]) == 2
 
     out = app.invoke(Command(resume="Thomas Foussard"), config)
-    assert model.seen[-1][-1]["content"].count("Réponse de l'utilisateur : Thomas Foussard") == 1
+    assert model.seen[-1][-1]["content"].count("User’s answer: Thomas Foussard") == 1
     assert out["__interrupt__"][0].value["tool"] == "reimburse_member"
     out = app.invoke(Command(resume={"approve": True}), config)
     assert out["stop_reason"] == "final_answer" and len(read_state(db_path)["ledger"]) == 3
@@ -179,14 +179,14 @@ def test_interactive_final_answer_that_is_not_a_question_ends_normally(client):
 
 
 def test_interactive_final_question_after_a_write_ends_normally(client):
-    model = ScriptedModel(("record_dues_payment", {"member_id": "M003", "amount_eur": 30}), "Cotisation notée. Autre chose ?")
+    model = ScriptedModel(("record_dues_payment", {"member_id": "M003", "amount_eur": 30}), "Dues noted. Anything else?")
     _, _, out = run(client, model, "Hugo Bernard vient de payer sa cotisation de 30 €, enregistre-la.", interactive=True)
     assert "__interrupt__" not in out and out["stop_reason"] == "final_answer"
 
 
 def test_evaluation_mode_final_question_is_a_plain_final_answer(client):
     model = ScriptedModel(("search_members", {"query": "Thomas"}), "Quel Thomas ?")
-    _, _, out = run(client, model, "Rembourse la note de frais de Thomas.", interactive=False)
+    _, _, out = run(client, model, "Reimburse Thomas's expense claim.", interactive=False)
     assert "__interrupt__" not in out and out["stop_reason"] == "final_answer" and out["answer"] == "Quel Thomas ?"
     assert [c["tool"] for c in out["tool_calls"]] == ["search_members"]
 
@@ -198,7 +198,7 @@ def test_budget_reached_stops_with_its_own_stop_reason(client, db_path):
 
 
 def test_keyed_write_without_approval_runs_at_once(client, db_path):
-    model = ScriptedModel(("record_dues_payment", {"member_id": "M003", "amount_eur": 30}), "Cotisation enregistrée.")
+    model = ScriptedModel(("record_dues_payment", {"member_id": "M003", "amount_eur": 30}), "Dues recorded.")
     _, _, out = run(client, model, "Hugo Bernard vient de payer sa cotisation de 30 €, enregistre-la.")
     assert "__interrupt__" not in out
     assert read_state(db_path)["ledger"][-1]["type"] == "dues"
@@ -225,10 +225,10 @@ def test_paused_run_survives_a_new_graph_on_the_same_checkpoint_file(client, db_
     model = ScriptedModel(("pay_expense", {"expense_id": "E-001"}))
     run(client, model, "Paie la facture E-001.", thread="demo",
         checkpointer=SqliteSaver(sqlite3.connect(ckpt, check_same_thread=False)))
-    app2 = build_graph(client=client, chat=ScriptedModel("Payée."),
+    app2 = build_graph(client=client, chat=ScriptedModel("Paid."),
                        checkpointer=SqliteSaver(sqlite3.connect(ckpt, check_same_thread=False)))
     out = app2.invoke(Command(resume={"approve": True}), run_config("demo"))
-    assert out["answer"] == "Payée." and len(read_state(db_path)["ledger"]) == 3
+    assert out["answer"] == "Paid." and len(read_state(db_path)["ledger"]) == 3
 
 
 def test_parallel_calls_run_only_the_first_and_the_model_is_told(client, db_path):
@@ -243,7 +243,7 @@ def test_parallel_calls_run_only_the_first_and_the_model_is_told(client, db_path
 
     def model(messages, tools, model=None):
         return next(replies)(messages, tools, model)
-    _, _, out = run(client, model, "Paie toutes les factures validées de la section tennis.")
+    _, _, out = run(client, model, "Pay all validated invoices of the tennis section.")
     assert [(c["tool"], c["outcome"]) for c in out["tool_calls"]] == [("get_expense", "ok")]
     assert len(read_state(db_path)["ledger"]) == 2
     shown = [m for m in script.seen[0] if m["role"] == "tool"]

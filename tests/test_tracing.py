@@ -10,7 +10,7 @@ IBAN = "FR3810278000010002025512345"
 @pytest.mark.parametrize("raw,leaked", [
     (f"nouvel IBAN {IBAN}", IBAN),
     ("FR38 1027 8000 0100 0202 5512 345", "1027"),
-    ("écrire à lea.martin@ecole.fr", "lea.martin"),
+    ("write to lea.martin@ecole.fr", "lea.martin"),
     ("Authorization: Bearer abcdefghijklmnop1234", "abcdefghijklmnop1234"),
     ("key sk-or-v1-0123456789abcdef", "0123456789abcdef"),
 ])

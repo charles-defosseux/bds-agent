@@ -80,7 +80,7 @@ def guard_alerts(tool_calls: list) -> list[str]:
     seen, lines = set(), []
     for c in tool_calls:
         if c.get("outcome") == "blocked_by_guard":
-            line = f"⚠️ Action bloquée par le garde-fou : {c['tool']} ({c.get('reason') or c.get('error_code') or 'sans raison'})"
+            line = f"⚠️ Action blocked by the guard: {c['tool']} ({c.get('reason') or c.get('error_code') or 'no reason'})"
             if line not in seen:
                 seen.add(line)
                 lines.append(line)
@@ -151,35 +151,35 @@ def approval_payload(tool: str, args: dict, facts: dict) -> dict:
          "rule": "", "irreversible": ""}
     if tool in ("pay_expense", "reimburse_member"):
         e = facts.get("expense", {})
-        kind = "Payer la facture" if tool == "pay_expense" else "Rembourser la note de frais"
+        kind = "Pay invoice" if tool == "pay_expense" else "Reimburse expense claim"
         p.update(action=f"{kind} {args.get('expense_id')}", amount_eur=e.get("amount_eur"),
                  beneficiary=facts.get("beneficiary") or e.get("payee"), section=e.get("section"),
-                 rule="Règle 2 (validation humaine ; au-delà de 300 €, accord du président). L'outil vérifie aussi "
-                      "les règles 1 (budget), 3 (justificatif), 4 (jamais deux fois) et 5 (prestataire bloqué).",
-                 irreversible="L'argent sort du budget de la section ; un paiement ne s'annule pas.")
+                 rule="Rule 2 (human approval; above €300, the president's approval). The tool also checks "
+                      "rules 1 (budget), 3 (receipt), 4 (never twice) and 5 (blocked vendor).",
+                 irreversible="The money leaves the section budget; a payment cannot be undone.")
     elif tool == "refund_event_registrations":
-        p.update(action=f"Rembourser les {facts.get('registered_count')} inscrits de « {facts.get('event_name')} » "
+        p.update(action=f"Refund the {facts.get('registered_count')} registrants of “{facts.get('event_name')}” "
                         f"({args.get('event_id')})",
-                 amount_eur=facts.get("total_collected_eur"), beneficiary="les inscrits de l'événement",
-                 section=facts.get("section"), rule="Règle 2 (validation humaine) et règle 1 (budget de section).",
-                 irreversible="L'argent sort du budget de la section ; les remboursements ne s'annulent pas.")
+                 amount_eur=facts.get("total_collected_eur"), beneficiary="the event's registrants",
+                 section=facts.get("section"), rule="Rule 2 (human approval) and rule 1 (section budget).",
+                 irreversible="The money leaves the section budget; refunds cannot be undone.")
     elif tool == "cancel_event":
-        p.update(action=f"Annuler « {facts.get('event_name')} » ({args.get('event_id')}, {facts.get('date')})",
-                 beneficiary=f"{facts.get('registered_count')} inscrits", section=facts.get("section"),
-                 rule="Annulation demandée par l'utilisateur (garde-fou) ; ne rembourse ni ne prévient personne.",
-                 irreversible="Un événement annulé ne peut pas être rétabli.")
+        p.update(action=f"Cancel “{facts.get('event_name')}” ({args.get('event_id')}, {facts.get('date')})",
+                 beneficiary=f"{facts.get('registered_count')} registrants", section=facts.get("section"),
+                 rule="Cancellation requested by the user (guard); does not refund or notify anyone.",
+                 irreversible="A cancelled event cannot be reinstated.")
     elif tool == "update_member_iban":
-        p.update(action=f"Remplacer l'IBAN de {facts.get('member_name')} ({args.get('member_id')})",
+        p.update(action=f"Replace the IBAN of {facts.get('member_name')} ({args.get('member_id')})",
                  beneficiary=facts.get("member_name"), section=facts.get("section"),
-                 rule="Règle 6 : IBAN modifié seulement sur demande explicite de l'utilisateur.",
-                 irreversible=f"L'ancien IBAN ({facts.get('old_iban_masked')}) est écrasé ; les prochains "
-                              "remboursements iront sur le nouveau compte.")
+                 rule="Rule 6: an IBAN is changed only on the user's explicit request.",
+                 irreversible=f"The old IBAN ({facts.get('old_iban_masked')}) is overwritten; future "
+                              "reimbursements will go to the new account.")
         p["args"] = {**args, "new_iban": _mask(args.get("new_iban", ""))}
     elif tool == "send_email":
         n = len(set(args.get("recipient_member_ids") or []))
-        p.update(action=f"Envoyer l'e-mail « {args.get('subject')} » à {n} membres", beneficiary=f"{n} membres",
-                 rule="Règle 2 : un e-mail groupé passe par une validation humaine.",
-                 irreversible="Un e-mail envoyé ne peut pas être rappelé.")
+        p.update(action=f"Send the e-mail “{args.get('subject')}” to {n} members", beneficiary=f"{n} members",
+                 rule="Rule 2: a group e-mail goes through human approval.",
+                 irreversible="A sent e-mail cannot be recalled.")
     if p["amount_eur"] is not None:
         p["amount_eur"] = round_eur(p["amount_eur"])
     return p
@@ -390,7 +390,7 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
                 "answer": with_alerts(question, state["tool_calls"]), "status": "done", "stop_reason": "asked_user", "tool_calls": [attempt],
                 "transcript": [f"      -> question for the user: {question}"]})
         reply = as_answer(interrupt({"question": question}))
-        result = {"ok": True, "data": f"Réponse de l'utilisateur : {reply}"}
+        result = {"ok": True, "data": f"User’s answer: {reply}"}
         return Command(goto="think", update={
             "observations": [{"tool": "ask_user", "args": args, "result": result}], "tool_calls": [attempt],
             "transcript": [f"      -> question: {question}", f"      <- the human answered: {reply}"]})

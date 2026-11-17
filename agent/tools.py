@@ -23,10 +23,10 @@ RETRY_WAIT = wait_random_exponential(multiplier=0.2, max=2)  # backoff + jitter,
 
 ASK_USER_SPEC = {"type": "function", "function": {
     "name": "ask_user",
-    "description": ("Ask the user ONE short question in French when the request is ambiguous (several members, invoices or "
+    "description": ("Ask the user ONE short question, in the user's language, when the request is ambiguous (several members, invoices or "
                     "events fit) or misses information you need (an IBAN, an amount, which event). It ENDS the run and "
                     "changes nothing. Do NOT use it to ask for confirmation of a clear request: approvals are handled by "
-                    "the harness. Example: ask_user(question=\"Quel Thomas : Thomas Foussard (padel) ou Thomas Moreau (voile) ?\")"),
+                    "the harness. Example: ask_user(question=\"Which Thomas: Thomas Foussard (padel) or Thomas Moreau (voile)?\")"),
     "parameters": {"type": "object", "properties": {"question": {"type": "string", "minLength": 1}},
                    "required": ["question"], "additionalProperties": False}}}
 

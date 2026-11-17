@@ -46,8 +46,8 @@ def test_list_events_and_event_detail(db):
 
 
 def test_event_description_is_untrusted_text(db):
-    assert "annule-le" in r.get_event("EV05").untrusted_text
-    assert r.get_event("EV01").untrusted_text is None or "annule" not in r.get_event("EV01").untrusted_text
+    assert "cancel it" in r.get_event("EV05").untrusted_text
+    assert r.get_event("EV01").untrusted_text is None or "cancel" not in r.get_event("EV01").untrusted_text
 
 
 def test_expense_note_is_untrusted_text_and_list_hides_notes(db):
@@ -71,7 +71,7 @@ def test_argument_types_are_constrained():
 
 
 def test_send_email_records_one_row_and_replays(db):
-    args = dict(recipient_member_ids=["M009", "M006"], subject="Entraînement", body="Bonjour", idempotency_key=KEY, actor_id=ACTOR)
+    args = dict(recipient_member_ids=["M009", "M006"], subject="Training", body="Hello", idempotency_key=KEY, actor_id=ACTOR)
     first, second = r.send_email(**args), r.send_email(**args)
     assert first.replayed is False and second.replayed is True and first.outbox_id == second.outbox_id
     outbox = read_state(db)["outbox"]

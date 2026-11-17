@@ -38,7 +38,7 @@ def step(name: str, thread_id: str, task: str, approve: bool) -> None:
     if name == "start":
         out = app.invoke({"task": task}, config)
     else:
-        out = app.invoke(Command(resume={"approve": approve, "reason": "démo" if approve else "refusé pour la démo"}),
+        out = app.invoke(Command(resume={"approve": approve, "reason": "demo" if approve else "rejected for the demo"}),
                          config)
     print(f"--- process {os.getpid()} ({name}) ---")
     print("\n".join(out.get("transcript", [])))

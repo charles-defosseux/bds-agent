@@ -31,30 +31,30 @@ def column(runs: list[dict]) -> dict:
 def render(a_runs: list[dict], b_runs: list[dict]) -> str:
     a, b = column(a_runs), column(b_runs)
     k = a["k"]
-    rows = [("Modèle", a["model"], b["model"]), ("Prompt", a["prompt"], b["prompt"])]
+    rows = [("Model", a["model"], b["model"]), ("Prompt", a["prompt"], b["prompt"])]
     for kind in KINDS:
-        rows.append((f"Succès {kind} : pass^{k} (n = {a['by_kind'][kind]['n']})",
+        rows.append((f"Success {kind}: pass^{k} (n = {a['by_kind'][kind]['n']})",
                      *[fmt_rate(x["by_kind"][kind]["all_k"], x["by_kind"][kind]["n"]) for x in (a, b)]))
-    rows += [(f"**pass^{k} total** (30 scénarios)", *[fmt_rate(x["total"]["all_k"], x["total"]["n"]) for x in (a, b)]),
+    rows += [(f"**pass^{k} total** (30 scenarios)", *[fmt_rate(x["total"]["all_k"], x["total"]["n"]) for x in (a, b)]),
              (f"pass@{k} total", *[fmt_rate(x["total"]["at_k"], x["total"]["n"]) for x in (a, b)]),
-             ("Succès par run", *[fmt_rate(x["pass_runs"], x["runs"]) for x in (a, b)]),
-             ("Runs en erreur (API, timeout)", a["errors"], b["errors"]),
-             ("Injections suivies (adversarial, runs)", *[f"{len(x['adv']['followed'])}/{x['adv']['runs']}" for x in (a, b)]),
-             ("Injections arrivées au backend", *[f"{len(x['adv']['reached'])}/{x['adv']['runs']}" for x in (a, b)]),
-             ("Étapes (appels au modèle) médiane / moyenne", *[f"{percentile(x['steps'], 50):.0f} / {sum(x['steps']) / x['runs']:.2f}" for x in (a, b)]),
-             ("Appels d'outils moyens par run", *[f"{sum(x['calls']) / x['runs']:.2f}" for x in (a, b)]),
-             ("Tokens entrée / sortie (total)", *[f"{x['tin']:,} / {x['tout']:,}".replace(",", " ") for x in (a, b)]),
-             ("Coût total", *[f"{sum(x['cost']):.4f} $" for x in (a, b)]),
-             ("Coût par succès", *[f"{sum(x['cost']) / x['pass_runs']:.5f} $" if x["pass_runs"] else "n/a" for x in (a, b)]),
-             ("Latence p50 / p95 par run", *[f"{percentile(x['lat'], 50):.1f} s / {percentile(x['lat'], 95):.1f} s" for x in (a, b)])]
-    out = ["# Comparaison de deux modèles (même prompt, même code)", "",
-           f"| Mesure | A — {a['model']} | B — {b['model']} |", "|---|---|---|"]
+             ("Success per run", *[fmt_rate(x["pass_runs"], x["runs"]) for x in (a, b)]),
+             ("Runs in error (API, timeout)", a["errors"], b["errors"]),
+             ("Injections followed (adversarial, runs)", *[f"{len(x['adv']['followed'])}/{x['adv']['runs']}" for x in (a, b)]),
+             ("Injections that reached the backend", *[f"{len(x['adv']['reached'])}/{x['adv']['runs']}" for x in (a, b)]),
+             ("Steps (model calls) median / mean", *[f"{percentile(x['steps'], 50):.0f} / {sum(x['steps']) / x['runs']:.2f}" for x in (a, b)]),
+             ("Mean tool calls per run", *[f"{sum(x['calls']) / x['runs']:.2f}" for x in (a, b)]),
+             ("Tokens in / out (total)", *[f"{x['tin']:,} / {x['tout']:,}".replace(",", " ") for x in (a, b)]),
+             ("Total cost", *[f"{sum(x['cost']):.4f} $" for x in (a, b)]),
+             ("Cost per success", *[f"{sum(x['cost']) / x['pass_runs']:.5f} $" if x["pass_runs"] else "n/a" for x in (a, b)]),
+             ("Latency p50 / p95 per run", *[f"{percentile(x['lat'], 50):.1f} s / {percentile(x['lat'], 95):.1f} s" for x in (a, b)])]
+    out = ["# Comparison of two models (same prompt, same code)", "",
+           f"| Measure | A — {a['model']} | B — {b['model']} |", "|---|---|---|"]
     out += [f"| {m} | {x} | {y} |" for m, x, y in rows]
     c = compare(a_runs, b_runs)
-    out += ["", f"Comparaison appariée par scénario (A → B) : {c['improved']} scénario(s) meilleur(s) avec B, {c['worsened']} moins bon(s), "
-            f"{c['ties']} égalité(s) ; test des signes exact bilatéral p = {c['p_value']:.3f}.",
-            "", "Intervalles de Wilson à 95 % avec n = scénarios. Étapes = appels au modèle ; coût = `usage.cost` d'OpenRouter.",
-            "", "## Scénarios où les modèles diffèrent", "", "| Scénario | Type | A | B |", "|---|---|---|---|"]
+    out += ["", f"Paired comparison per scenario (A → B): {c['improved']} scenario(s) better with B, {c['worsened']} worse, "
+            f"{c['ties']} tie(s); exact two-sided sign test p = {c['p_value']:.3f}.",
+            "", "95% Wilson intervals with n = scenarios. Steps = model calls; cost = OpenRouter's `usage.cost`.",
+            "", "## Scenarios where the models differ", "", "| Scenario | Kind | A | B |", "|---|---|---|---|"]
     out += [f"| {r['id']} | {r['kind']} | {r['before']} | {r['after']} |" for r in c["rows"] if r["delta"]]
     return "\n".join(out) + "\n"
 

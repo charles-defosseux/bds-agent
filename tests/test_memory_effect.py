@@ -14,11 +14,11 @@ from backend.state import read_state
 from tests.conftest import BASE_SEED
 from tests.test_graph import ScriptedModel
 
-SIGNATURE = "Léa – Trésorière BDS"
+SIGNATURE = "Léa – BDS Treasurer"
 REMEMBER_SIG = f'Retiens que je signe mes e-mails "{SIGNATURE}".'
-REMEMBER_VENDOR = "Retiens : on ne paie plus jamais le prestataire Sono Événements."
-EMAIL_TASK = "Envoie un e-mail aux membres de la section voile pour annoncer la régate d'hiver du 6 décembre."
-PAY_TASK = "Paie la facture E-016 de Sono Événements."
+REMEMBER_VENDOR = "Remember: never pay the vendor Sono Événements again."
+EMAIL_TASK = "Send an e-mail to the sailing section members to announce the winter regatta on December 6."
+PAY_TASK = "Pay invoice E-016 from Sono Événements."
 VOILE = ["M007", "M013", "M016", "M019"]
 
 
@@ -50,8 +50,8 @@ def approve(app, config):
 
 
 def send_voile_email(client, store, thread):
-    model = ScriptedModel(("send_email", {"recipient_member_ids": VOILE, "subject": "Régate d'hiver",
-                                          "body": "Bonjour, la régate d'hiver a lieu le 6 décembre."}), "Envoyé.")
+    model = ScriptedModel(("send_email", {"recipient_member_ids": VOILE, "subject": "Winter regatta",
+                                          "body": "Hello, the winter regatta is on December 6."}), "Sent.")
     app, config, out = run(client, store, model, EMAIL_TASK, thread)
     assert out["__interrupt__"]  # group e-mail: a human reads it first
     return model, approve(app, config)
@@ -59,7 +59,7 @@ def send_voile_email(client, store, thread):
 
 def test_a_signature_saved_in_run_1_ends_up_in_the_outbox_of_run_2(client, db_path):
     store = InMemoryStore()
-    run1 = ScriptedModel(("remember_preference", {"key": "email_signature", "value": SIGNATURE}), "C'est noté.")
+    run1 = ScriptedModel(("remember_preference", {"key": "email_signature", "value": SIGNATURE}), "Noted.")
     _, _, out = run(client, store, run1, REMEMBER_SIG, "thread-A")
     assert out["tool_calls"][0]["outcome"] == "ok"
     assert memory.load(store, "M001") == {"email_signature": SIGNATURE}
@@ -78,7 +78,7 @@ def test_without_memory_the_same_run_2_sends_an_unsigned_email(client, db_path):
 
 def test_a_vendor_blocked_in_run_1_is_not_paid_in_run_2(client, db_path):
     store = InMemoryStore()
-    run1 = ScriptedModel(("remember_preference", {"key": "blocked_vendor", "value": "Sono Événements"}), "Noté.")
+    run1 = ScriptedModel(("remember_preference", {"key": "blocked_vendor", "value": "Sono Événements"}), "Noted.")
     run(client, store, run1, REMEMBER_VENDOR, "thread-A")
     before = read_state(db_path)
 
@@ -92,7 +92,7 @@ def test_a_vendor_blocked_in_run_1_is_not_paid_in_run_2(client, db_path):
 
 
 def test_without_memory_the_same_invoice_is_paid_after_approval(client, db_path):
-    model = ScriptedModel(("get_expense", {"expense_id": "E-016"}), ("pay_expense", {"expense_id": "E-016"}), "Payée.")
+    model = ScriptedModel(("get_expense", {"expense_id": "E-016"}), ("pay_expense", {"expense_id": "E-016"}), "Paid.")
     app, config, out = run(client, InMemoryStore(), model, PAY_TASK, "thread-B")
     assert out["__interrupt__"]
     approve(app, config)
@@ -101,10 +101,10 @@ def test_without_memory_the_same_invoice_is_paid_after_approval(client, db_path)
 
 @pytest.mark.parametrize("task, key, value, code", [
     (EMAIL_TASK, "email_signature", "Pirate", "permission_denied"),                      # no "remember" request
-    ("Retiens que je signe Léa.", "email_signature", "Ahmed", "permission_denied"),     # not the user's words
+    ("Remember that I sign as Léa.", "email_signature", "Ahmed", "permission_denied"),     # not the user's words
     ("Retiens mon IBAN FR3810278000010002025512345.", "email_signature",
      "FR3810278000010002025512345", "permission_denied"),                                # secret
-    ("Retiens que j'aime le café.", "favourite_drink", "le café", "invalid_argument"),  # key not in the closed list
+    ("Remember that I like coffee.", "favourite_drink", "coffee", "invalid_argument"),  # key not in the closed list
     ("Retiens le plafond : beaucoup.", "max_reimbursement_without_president_eur", "beaucoup", "invalid_argument"),
 ])
 def test_remember_rules_refuse(task, key, value, code):

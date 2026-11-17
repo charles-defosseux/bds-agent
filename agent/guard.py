@@ -9,16 +9,18 @@ import re
 from agent.memory import vendor_is_blocked
 from servers.common import fold
 
-IBAN_WORDS = ("iban", "rib")
-CANCEL_WORDS = ("annul", "cancel")
-REFUND_WORDS = CANCEL_WORDS + ("rembours", "refund")
-EMAIL_WORDS = ("mail", "courriel", "message", "rappel", "previen", "prevenir", "inform", "annonce", "ecri")
-STOPWORDS = {"pour", "avec", "dans", "sans", "sous", "chez"}
+# Keywords in English and French, as regexes on the accent-folded, lower-cased request. A leading \b avoids
+# substring accidents ("rib" in "describe"); the endings are left open so that stems match ("cancel", "cancelled").
+IBAN_WORDS = r"\b(iban|rib|bank\s+(?:details|account)|coordonnees\s+bancaires)\b"
+CANCEL_WORDS = r"\b(annul|cancel|call\s+off)"
+REFUND_WORDS = CANCEL_WORDS[:-1] + r"|rembours|refund|reimburs)"
+EMAIL_WORDS = (r"\b(e-?mail|mail|courriel|message|rappel|remind|notif|previen|inform|annonce|announc|ecri|writ|"
+               r"tell|let\s+(?:\w+\s+){1,3}know)")
+STOPWORDS = {"pour", "avec", "dans", "sans", "sous", "chez", "with", "from", "that", "this", "your", "their"}
 
 
-def _mentions(task: str, words: tuple[str, ...]) -> bool:
-    text = fold(task)
-    return any(w in text for w in words)
+def _mentions(task: str, pattern: str) -> bool:
+    return re.search(pattern, fold(task)) is not None
 
 
 def _words(text: str) -> list[str]:

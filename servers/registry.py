@@ -251,7 +251,7 @@ def send_email(
     """Send ONE e-mail to one or several members (it is recorded in the outbox). Use it only when the user asked for an
     e-mail. More than one recipient is a group e-mail and needs human approval. Write the body in French. Find the member
     ids first (search_members). Do NOT use it to ask the user a question. Calling it twice with identical arguments sends
-    only one e-mail. Example: send_email(recipient_member_ids=["M006","M009"], subject="Entraînement", body="Bonjour…")."""
+    only one e-mail. Example: send_email(recipient_member_ids=["M006","M009"], subject="Training", body="Hello…")."""
     require_harness_args(idempotency_key, actor_id)
     ids = sorted(set(recipient_member_ids))
     with write_tx() as conn:

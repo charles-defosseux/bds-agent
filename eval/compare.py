@@ -44,11 +44,11 @@ def compare(before: list[dict], after: list[dict]) -> dict:
 
 def render(c: dict, title: str) -> str:
     lines = [f"## {title}", "",
-             f"- Runs réussis : {c['runs_before']}/{c['n_before']} avant → {c['runs_after']}/{c['n_after']} après",
-             f"- Scénarios : {c['improved']} améliorés, {c['worsened']} dégradés, {c['ties']} inchangés · "
-             f"sign test exact bilatéral : p = {c['p_value']:.3f}", "",
-             "Scénarios qui ne passent pas k/k avant et après (les autres : inchangés à k/k) :", "",
-             "| Scénario | Type | Avant | Après | Δ |", "|---|---|---|---|---|"]
+             f"- Successful runs: {c['runs_before']}/{c['n_before']} before → {c['runs_after']}/{c['n_after']} after",
+             f"- Scenarios: {c['improved']} improved, {c['worsened']} worsened, {c['ties']} unchanged · "
+             f"exact two-sided sign test : p = {c['p_value']:.3f}", "",
+             "Scenarios that do not pass k/k before and after (the others: unchanged at k/k):", "",
+             "| Scenario | Kind | Before | After | Δ |", "|---|---|---|---|---|"]
     lines += [f"| {r['id']} | {r['kind']} | {r['before']} | {r['after']} | {r['delta']:+d} |"
               for r in c["rows"] if not r["all_pass"]]
     return "\n".join(lines) + "\n"
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("before")
     p.add_argument("after")
-    p.add_argument("--title", default="Comparaison appariée avant / après")
+    p.add_argument("--title", default="Paired comparison before / after")
     p.add_argument("--out", default=None)
     a = p.parse_args(argv)
     text = render(compare(load(Path(a.before)), load(Path(a.after))), a.title)

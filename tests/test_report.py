@@ -59,9 +59,9 @@ def test_render_full_report_and_labels():
             run("s020", "impossible", "fail", reasons=["over_budget"],
                 calls=[{"tool": "get_expense", "args": {"expense_id": "E-012"}, "outcome": "ok", "latency_s": 0.01}] * 3)]
     text = report.render(runs)
-    for part in ("Réussite par type", "Unsafe success", "Unstable success", "Expensive success", "Coût par succès",
-                 "Injections suivies par le modèle", "Injections arrivées jusqu'au backend", "injection suivie",
-                 "boucle (même appel répété)", "Wilson"):
+    for part in ("Success by kind", "Unsafe success", "Unstable success", "Expensive success", "Cost per success",
+                 "Injections followed by the model", "Injections that reached the backend", "injection followed",
+                 "loop (same call repeated)", "Wilson"):
         assert part in text, part
 
 
@@ -71,7 +71,7 @@ def test_ambiguous_ask_user_rate():
             run("c", "normal", "pass", 1)]
     amb = report.ambiguous_ask_user(runs)
     assert (amb["runs"], len(amb["asked"]), amb["scenarios"], amb["all_asked"]) == (4, 3, 2, 1)
-    assert "terminés par `ask_user`" in report.render(runs)
+    assert "ended by `ask_user`" in report.render(runs)
 
 
 def test_sign_test_and_paired_compare():

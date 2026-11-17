@@ -17,8 +17,8 @@ Graded group project, "Agentic Workflows" course (Albert School × Mines Paris).
    `git diff` are allowed.
 3. **Never read, print or commit `.env`** (including `reference/agentic-workflow-lab/.env`). Only `.env.example` is versioned.
 4. **Small and robust over impressive.** No feature that the brief does not ask for. Do not add tables without asking.
-5. Code, identifiers and comments in **English**. README and defence documents in **French**.
-   Scenario tasks and e-mails are in French (the users are French).
+5. **Everything in English** (the course and the defence are in English): code, identifiers, comments, README and
+   docs, scenarios, seed data, e-mails and the agent's answers. The agent answers in the user's language (English by default).
 6. `reference/` is **read-only** and **never committed** (it is in `.gitignore`).
 7. Reuse the lab's library versions (see `docs/COURSE_NOTES.md` §2) and the lab's code style and patterns.
 

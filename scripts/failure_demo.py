@@ -80,16 +80,16 @@ def main() -> int:
     results = []
     with McpClient(DB) as client:
         results.append(run_case(client, "A", {"tool": "pay_expense", "mode": "timeout_after_write", "times": 1},
-                                Scripted(("get_expense", EXPENSE), ("pay_expense", EXPENSE), "Facture E-001 payée.")))
+                                Scripted(("get_expense", EXPENSE), ("pay_expense", EXPENSE), "Invoice E-001 paid.")))
         results.append(run_case(client, "B", {"tool": "pay_expense", "mode": "timeout_after_write", "times": 3},
                                 Scripted(("get_expense", EXPENSE), ("pay_expense", EXPENSE), ("pay_expense", EXPENSE),
-                                         "Facture E-001 payée (une seule fois).")))
+                                         "Invoice E-001 paid (only once).")))
         real_key = mcp_client.idempotency_key
         mcp_client.idempotency_key = lambda *a, **k: uuid.uuid4().hex  # a naive client: a new key at every attempt
         try:
             results.append(run_case(client, "C", {"tool": "pay_expense", "mode": "timeout_after_write", "times": 1},
                                     Scripted(("get_expense", EXPENSE), ("pay_expense", EXPENSE),
-                                             "Le paiement a échoué (conflit).")))
+                                             "The payment failed (conflict).")))
         finally:
             mcp_client.idempotency_key = real_key
     tracing.shutdown()
