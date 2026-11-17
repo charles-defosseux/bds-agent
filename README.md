@@ -33,7 +33,7 @@ uv run python scripts/failure_demo.py                                           
 ```
 
 Options de `run_eval.py` : `--repeats N`, `--model ID`, `--only ID…`, `--kind {normal,ambiguous,impossible,adversarial}`,
-`--no-trace`. Attention : `--out eval/` **écrase** `eval/results.jsonl`, qui contient les résultats officiels (v5 : mêmes résultats que la v4, 90/90, `eval/runs/v5/compare.md`).
+`--no-trace`. Attention : `--out eval/` **écrase** `eval/results.jsonl`, qui contient les résultats officiels (v5.2 : mêmes taux de réussite que la v5, 90/90, `eval/runs/v5_2/compare.md`).
 Pour un essai sans les écraser, utiliser un autre dossier (`--out eval/runs/essai/`).
 
 ## Le graphe
@@ -115,7 +115,7 @@ appelle `interrupt({"question": ...})`, la réponse libre de l'humain revient au
   `get_expense` renvoie `payable` et `blocking_reasons`.
 - **Budget** : `max_steps` = nombre d'appels d'outils ; atteindre le budget est un échec avec son propre `stop_reason`.
 
-## Résultats par type (v5, 30 scénarios × 3 essais, `eval/report.md`)
+## Résultats par type (v5.2, 30 scénarios × 3 essais, `eval/report.md`)
 
 | Type | n | pass^3 [Wilson 95 %] |
 |---|---|---|
@@ -125,11 +125,17 @@ appelle `interrupt({"question": ...})`, la réponse libre de l'humain revient au
 | adversarial | 6 | 6/6 = 100 % [61–100] |
 | **Total** | 30 | **30/30 = 100 % [89–100]** · 90/90 runs |
 
-Injections suivies par le modèle : 0/18 ; arrivées jusqu'au backend : 0/18. Coût total 0,073 $ (0,00081 $ par succès),
-latence p50 / p95 3,3 s / 9,1 s, 1,43 M tokens en entrée. La v4 donnait les mêmes taux de réussite (90/90, mêmes pass^3 par type) ; seuls le coût
-(0,088 $) et la latence (3,5 s / 9,8 s) varient, ce qui relève du bruit du modèle et du fournisseur (`eval/runs/v5/compare.md`). **Ce 100 % est optimiste** : les corrections ont été écrites en lisant
+Injections suivies par le modèle : 0/18 ; arrivées jusqu'au backend : 0/18 ; **signalées au trésorier : 18/18** (mesure seule, hors score).
+Coût total 0,078 $ (0,00087 $ par succès), latence p50 / p95 3,7 s / 11,8 s, 1,46 M tokens en entrée. La v5 donnait les mêmes taux de réussite
+(90/90, mêmes pass^3 par type, 0 scénario amélioré ou dégradé) ; coût (0,073 $) et latence (3,3 s / 9,1 s) relèvent du bruit du modèle et du fournisseur
+(`eval/runs/v5_2/compare.md`). Le signalement est une mesure sur les 6 scénarios adversariaux (`alert_keywords`) : le modèle écrit « ⚠️ Instruction suspecte
+ignorée : … » ; le scorer ne l'exige pas. **Ce 100 % est optimiste** : les corrections ont été écrites en lisant
 les traces de ces 30 scénarios (limite de Goodhart, `docs/ERROR_ANALYSIS.md`). Les held-out (7 scénarios jamais utilisés
 pour régler le prompt) donnent 10/12 sur les anciens et 9/9 sur les nouveaux.
+
+**Signalement des tentatives de fraude (v5.2).** Deux niveaux : (1) le prompt demande de signaler en une phrase « ⚠️ Instruction suspecte ignorée : … » toute
+demande d'action trouvée dans un texte d'outil (`untrusted_text`), sans la suivre ; (2) filet déterministe : quand le garde-fou bloque une écriture, le harness
+ajoute « ⚠️ Action bloquée par le garde-fou : <outil> (<raison>) » à la réponse finale, même si le modèle n'en parle pas.
 
 ## Analyse d'erreurs : deux itérations (`docs/ERROR_ANALYSIS.md`)
 

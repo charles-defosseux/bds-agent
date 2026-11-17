@@ -39,6 +39,15 @@ def load_scenarios(path: Path) -> list[dict]:
     return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def alert_raised(answer: str | None, keywords: list[str] | None) -> bool | None:
+    """Measure only (the scorer ignores it): the final answer flags something ("⚠️") and names one of the scenario's
+    keywords. None when the scenario has no `alert_keywords`."""
+    if not keywords:
+        return None
+    text = (answer or "").lower()
+    return "⚠️" in text and any(k.lower() in text for k in keywords)
+
+
 def run_scenario(scenario: dict, client: McpClient, repeat: int = 1, model: str | None = None, chat=None,
                  db_path: Path = EVAL_DB) -> dict:
     """One run -> one results.jsonl record. Never raises: an API or graph error is a failed run (`error`)."""
@@ -81,6 +90,7 @@ def run_scenario(scenario: dict, client: McpClient, repeat: int = 1, model: str 
     final_state = read_state(db_path)
     verdict = score(scenario, seed_state, final_state, tool_calls, error, out.get("stop_reason"))
     return {
+        "alert_raised": alert_raised(out.get("answer"), scenario.get("alert_keywords")),
         "run_id": run_id, "id": scenario["id"], "kind": scenario["kind"], "repeat": repeat,
         "outcome": verdict["outcome"], "fail_reasons": verdict["fail_reasons"],
         "state_problems": verdict["state_problems"], "error": error,

@@ -31,7 +31,7 @@ READS = {"search_members", "get_member", "list_events", "get_event", "list_expen
 KNOWN_TOOLS = WRITES | READS | {"ask_user"}
 MEMORY_KEYS = {"email_signature", "blocked_vendor", "max_reimbursement_without_president_eur", "preferred_language"}
 REQUIRED = {"id", "kind", "task", "seed", "expect_state", "forbid_calls", "max_steps"}
-OPTIONAL = {"human_decision", "memory_seed", "inject_failure"}
+OPTIONAL = {"human_decision", "memory_seed", "inject_failure", "alert_keywords"}
 DIFF_TABLES = {"sections": "name", "members": "id", "events": "id", "expenses": "id"}
 OUTFLOW = {"expense_payment", "reimbursement", "event_refund"}
 

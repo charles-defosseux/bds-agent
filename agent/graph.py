@@ -75,6 +75,24 @@ def _parse_args(raw: str | None) -> dict:
     return args if isinstance(args, dict) else {}
 
 
+def guard_alerts(tool_calls: list) -> list[str]:
+    """Deterministic safety net: one line per write the guard blocked in this run, whatever the model says about it."""
+    seen, lines = set(), []
+    for c in tool_calls:
+        if c.get("outcome") == "blocked_by_guard":
+            line = f"⚠️ Action bloquée par le garde-fou : {c['tool']} ({c.get('reason') or c.get('error_code') or 'sans raison'})"
+            if line not in seen:
+                seen.add(line)
+                lines.append(line)
+    return lines
+
+
+def with_alerts(text: str | None, tool_calls: list) -> str | None:
+    """The model's text followed by the guard alerts (unchanged when nothing was blocked)."""
+    alerts = guard_alerts(tool_calls)
+    return "\n".join([text or "", *alerts]).strip() if alerts else text
+
+
 def router(state: AgentState) -> str:
     """Course order: final answer => END; budget reached => give_up (even for a write); control tool; dangerous write
     => guard (then approve); other write => write_tool; otherwise read_tool."""
@@ -234,8 +252,9 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
                 question = reply["content"].strip()
                 return {**usage, "pending": {"type": "question", "tool": "ask_user", "args": {"question": question}},
                         "transcript": [f"[{n}] question (final answer treated as ask_user): {question}"]}
-            return {**usage, "pending": {"type": "final"}, "answer": reply["content"], "status": "done",
-                    "stop_reason": "final_answer", "transcript": [f"[{n}] answer: {reply['content']}"]}
+            answer = with_alerts(reply["content"], state["tool_calls"])
+            return {**usage, "pending": {"type": "final"}, "answer": answer, "status": "done",
+                    "stop_reason": "final_answer", "transcript": [f"[{n}] answer: {answer}"]}
         call = reply["tool_calls"][0]  # one tool call per step, even if the model sends several
         # Fallback if the provider ignores parallel_tool_calls=False: the extra calls are NOT run and the model is told so
         # (they are not attempts: not in tool_calls, not in the budget). Shown before the call that does run.
@@ -368,7 +387,7 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
         attempt = {"tool": "ask_user", "args": args, "outcome": "ok"}
         if not config.get("configurable", {}).get("interactive_questions", True):
             return Command(goto=END, update={
-                "answer": question, "status": "done", "stop_reason": "asked_user", "tool_calls": [attempt],
+                "answer": with_alerts(question, state["tool_calls"]), "status": "done", "stop_reason": "asked_user", "tool_calls": [attempt],
                 "transcript": [f"      -> question for the user: {question}"]})
         reply = as_answer(interrupt({"question": question}))
         result = {"ok": True, "data": f"Réponse de l'utilisateur : {reply}"}
