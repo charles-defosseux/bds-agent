@@ -20,6 +20,7 @@ import atexit
 import json
 import operator
 import threading
+import time
 from typing import Annotated, Callable, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -27,7 +28,7 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Command, interrupt
 
 from agent import guard as guard_rules
-from agent import llm, memory
+from agent import llm, memory, tracing
 from agent.config import DEFAULT_MAX_STEPS, DEFAULT_TREASURER
 from agent.mcp_client import McpClient
 from agent.prompts import SYSTEM
@@ -220,8 +221,10 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
 
     def run_tool(state: AgentState, config) -> dict:
         tool, args = state["pending"]["tool"], state["pending"]["args"]
-        result = call_with_retries(mcp(), tool, args, _ctx(config))
-        attempt = {"tool": tool, "args": args, "outcome": "ok" if result["ok"] else "error"}
+        t0 = time.perf_counter()
+        result = tracing.traced_tool_call(tool, args, lambda: call_with_retries(mcp(), tool, args, _ctx(config)))
+        attempt = {"tool": tool, "args": args, "outcome": "ok" if result["ok"] else "error",
+                   "latency_s": round(time.perf_counter() - t0, 3)}
         if not result["ok"]:
             attempt["error_code"] = result["error"]["code"]
         if state["pending"].get("approved"):
