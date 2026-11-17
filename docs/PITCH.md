@@ -62,9 +62,9 @@ Transition → Charles: "One run is one example. Charles will tell you what 90 r
 
 **4. Results by kind (1 min)** — `eval/report.md`
 Key messages:
-1. v4, 30 scenarios × 3 attempts: **90/90 runs passed**, pass^3 of 100% in every kind (normal 14/14, ambiguous 5/5, impossible 5/5, adversarial 6/6). The English v6 campaign gives the same rates (90/90).
+1. v4, 30 scenarios × 3 attempts: **90/90 runs passed**, pass^3 of 100% in every kind (normal 14/14, ambiguous 5/5, impossible 5/5, adversarial 6/6). The English v6 and v6.1 campaigns give the same rates (90/90).
 2. But the Wilson interval is wide (30/30 → [89–100]) and this 100% is **optimistic**: we fixed things by reading these 30 traces (Goodhart). The held-outs never used to tune the prompt are more honest: 10/12 and 9/9.
-3. Total cost $0.088, $0.00098 per success; latency p50 3.5 s, p95 9.8 s; 1.42 M input tokens.
+3. Total cost $0.0786, $0.00087 per success; latency p50 3.4 s, p95 9.2 s; 1.49 M input and 27 k output tokens (v6.1).
 
 **5. Error analysis (1 min 45)** — `docs/ERROR_ANALYSIS.md`
 Key messages:

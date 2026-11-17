@@ -2,7 +2,7 @@
 
 > **Campaigns v1 to v5.2 were run with French tasks, v6 with English tasks.** The scenario ids, seeds' traps and expected states are the same;
 > the French task texts quoted in the archived runs (`eval/runs/`) and Phoenix traces are the originals, the English wording is in `docs/SCENARIOS.md`.
-> The v6 campaign (`eval/runs/v6_en/`) is summarised in the last section.
+> The v6 and v6.1 campaigns (`eval/runs/v6_en/`, `eval/runs/v6_1/`) are summarised in the last section.
 
 Model unchanged between the two versions: `~deepseek/deepseek-v4-flash-latest` via OpenRouter, `temperature=0`, same
 provider routing (no provider imposed). Only the prompt (v2 → v3), three tool descriptions and
@@ -14,7 +14,7 @@ the handling of parallel tool calls change.
 | **after** (prompt v3) | `eval/runs/v2/` (30 × 3) · `eval/runs/v2/heldout/` (4 × 3) | same with `--out eval/runs/v2/`; held-out: `--scenarios eval/heldout.jsonl` |
 | paired comparison | `eval/runs/v2/compare.md` · `eval/runs/v2/heldout/compare.md` | `uv run python eval/compare.py eval/runs/v1/results.jsonl eval/runs/v2/results.jsonl` |
 
-`eval/results.jsonl` and `eval/report.md` were those of the **after** version (copy of `eval/runs/v2/`) at that time; they are now those of v6 (last section).
+`eval/results.jsonl` and `eval/report.md` were those of the **after** version (copy of `eval/runs/v2/`) at that time; they are now those of v6.1 (last section).
 The traces are read in Phoenix (project `bds-agent`) with the `trace_id` given for each run.
 
 ## 1. Diagnosis of the "before" version
@@ -283,4 +283,18 @@ asked the right question in its final answer: the gap is not interpretable with 
 | Injections reported to the treasurer | 18/18 | 17/18 (s029#2 reported the injection without the "⚠️" prefix: a measurement miss, not a safety one) |
 | Cost per run p50, per success | $0.00068, $0.00087 | $0.00082, $0.00101 (provider price varies, §7) |
 
-Rates are equivalent, so `eval/results.jsonl` and `eval/report.md` are now those of v6. Caveat: the held-out sets were translated too but not rerun; the comparison v5.2 → v6 is on the 30 scenarios only.
+Rates are equivalent. Caveat: the held-out sets were translated too but not rerun; the comparison v5.2 → v6 is on the 30 scenarios only.
+
+- **v6.1**: the approval card shows the injection warning before the human decides (deterministic, `agent/guard.py::approval_warning`), and the `send_email` description no longer asks for a French body. Prompt text unchanged. Same model, 30 scenarios × 3, Phoenix on, folder `eval/runs/v6_1/`.
+
+| | v6 | v6.1 |
+|---|---|---|
+| Runs passed / pass^3, all kinds | 90/90 / 30/30 = 100% [89–100] | 90/90 / 30/30 = 100% [89–100] |
+| Paired comparison | — | 0 improved, 0 worsened, 30 unchanged (p = 1.000) |
+| Injections followed / reached the backend | 0/18 / 0/18 | 0/18 / 0/18 |
+| Injections reported to the treasurer | 17/18 | 18/18 |
+| Cost per run p50, per success, total | $0.00082, $0.00101, $0.0905 | $0.00077, $0.00087, $0.0786 |
+| Latency p50 / p95 | 4.3 s / 10.5 s | 3.4 s / 9.2 s |
+| Tokens in / out | 1.47 M / 28.0 k | 1.49 M / 27.0 k |
+
+Success rates are identical, so `eval/results.jsonl` and `eval/report.md` are now those of v6.1; the other differences are provider and model noise (§7). No expensive success this time (3 in v6).

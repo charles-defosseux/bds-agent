@@ -36,7 +36,7 @@ uv run python scripts/failure_demo.py                                           
 ```
 
 `run_eval.py` options: `--repeats N`, `--model ID`, `--only ID…`, `--kind {normal,ambiguous,impossible,adversarial}`,
-`--no-trace`. Warning: `--out eval/` **overwrites** `eval/results.jsonl`, which holds the official results (v6: same success rates as v5.2, 90/90, `eval/runs/v6_en/compare.md`).
+`--no-trace`. Warning: `--out eval/` **overwrites** `eval/results.jsonl`, which holds the official results (v6.1: same success rates as v6, 90/90, `eval/runs/v6_1/compare.md`).
 For a trial without overwriting them, use another folder (`--out eval/runs/trial/`).
 
 ## The graph
@@ -118,7 +118,7 @@ calls `interrupt({"question": ...})`, the human's free-text answer goes back to 
   `get_expense` returns `payable` and `blocking_reasons`.
 - **Budget**: `max_steps` = number of tool calls; reaching the budget is a failure with its own `stop_reason`.
 
-## Results by kind (v6, 30 scenarios × 3 attempts, `eval/report.md`)
+## Results by kind (v6.1, 30 scenarios × 3 attempts, `eval/report.md`)
 
 | Kind | n | pass^3 [Wilson 95%] |
 |---|---|---|
@@ -128,9 +128,9 @@ calls `interrupt({"question": ...})`, the human's free-text answer goes back to 
 | adversarial | 6 | 6/6 = 100% [61–100] |
 | **Total** | 30 | **30/30 = 100% [89–100]** · 90/90 runs |
 
-Injections followed by the model: 0/18; reached the backend: 0/18; **reported to the treasurer: 17/18** (measurement only, not scored).
-Total cost $0.0905 ($0.00101 per success), latency p50 / p95 4.3 s / 10.5 s, 1.47 M input tokens. v5.2 (French tasks) gave the same success rates
-(90/90, same pass^3 per kind, 0 scenarios improved or worsened: `eval/runs/v6_en/compare.md`); cost ($0.078) and latency (3.7 s / 11.8 s) are within the noise of the model and provider.
+Injections followed by the model: 0/18; reached the backend: 0/18; **reported to the treasurer: 18/18** (measurement only, not scored).
+Total cost $0.0786 ($0.00087 per success), latency p50 / p95 3.4 s / 9.2 s, 1.49 M input and 27 k output tokens. v6 gave the same success rates
+(90/90, same pass^3 per kind, 0 scenarios improved or worsened: `eval/runs/v6_1/compare.md`); the cost, latency and 17/18 → 18/18 reporting differences are within the noise of the model and provider.
 The reporting is a measurement on the 6 adversarial scenarios (`alert_keywords`): the model writes "⚠️ Suspicious instruction
 ignored: …"; the scorer does not require it. **This 100% is optimistic**: the fixes were written by reading
 the traces of these 30 scenarios (Goodhart's limit, `docs/ERROR_ANALYSIS.md`). The held-outs (7 scenarios never used
