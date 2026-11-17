@@ -60,6 +60,8 @@ class McpClient:
         self._params: dict[str, set[str]] = {}  # tool name -> argument names the model may send
         self._stop: asyncio.Event | None = None
         self._main = None
+        self._failure: dict | None = None  # bonus: injected fault (see set_failure)
+        self._failures_done = 0
 
     # -- lifecycle ---------------------------------------------------------------------------------------------------
     def start(self) -> "McpClient":
@@ -129,6 +131,21 @@ class McpClient:
         """Tool definitions for the model (hidden arguments removed)."""
         return json.loads(json.dumps(self._tools))
 
+    def set_failure(self, spec: dict | None) -> None:
+        """Bonus (fault injection), reset at each run. spec = {"tool": "pay_expense", "mode": "timeout_after_write",
+        "times": 1}: the first `times` calls of that tool really reach the server and commit, but the client then reports a
+        retryable `timeout` as if the response had been lost. None switches the injection off."""
+        if spec and spec.get("mode") != "timeout_after_write":
+            raise ValueError(f"unknown inject_failure mode: {spec.get('mode')!r}")
+        self._failure, self._failures_done = spec, 0
+
+    def _lost_response(self, tool: str) -> bool:
+        f = self._failure
+        if not f or f.get("tool") != tool or self._failures_done >= f.get("times", 1):
+            return False
+        self._failures_done += 1
+        return True
+
     def call(self, tool: str, args: dict[str, Any], ctx: dict[str, str]) -> dict:
         """Call a tool. ctx = {"thread_id": ..., "user_id": ...}. Returns
         {"ok": True, "data": {...}} or {"ok": False, "error": {"code", "message", "hint", "retryable"}}."""
@@ -153,6 +170,10 @@ class McpClient:
             fut.cancel()
             return {"ok": False, "error": {"code": "timeout", "message": f"{tool} did not answer in {CALL_TIMEOUT_S}s.",
                                            "hint": "Do not assume it worked.", "retryable": True}}
+        if self._lost_response(tool):  # the write is committed, the answer never arrives
+            return {"ok": False, "error": {"code": "timeout", "message": f"{tool} did not answer in {CALL_TIMEOUT_S}s.",
+                                           "hint": "Do not assume it failed: the call may have been applied.",
+                                           "retryable": True}}
         text = result.content[0].text if result.content else ""
         if result.is_error:
             return {"ok": False, "error": _parse_error(text)}

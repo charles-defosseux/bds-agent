@@ -4,6 +4,7 @@ Approval and retry come from THIS classification, never from the MCP annotations
 """
 import json
 
+from opentelemetry import trace
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_random_exponential
 
 from agent.memory import REMEMBER_SPEC
@@ -68,6 +69,9 @@ def call_with_retries(client, tool: str, args: dict, ctx: dict) -> dict:
     def attempt() -> dict:
         result = client.call(tool, args, ctx)
         if not result["ok"] and result["error"].get("retryable") and safe:
+            # visible in the trace (event on the current TOOL span): the retry reuses the same idempotency key
+            trace.get_current_span().add_event("retry", {"tool": tool, "error_code": result["error"]["code"],
+                                                         "attempt": attempt.statistics.get("attempt_number", 0)})
             raise _Retryable(result)
         return result
 

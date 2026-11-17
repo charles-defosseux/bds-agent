@@ -47,6 +47,7 @@ def run_scenario(scenario: dict, client: McpClient, repeat: int = 1, model: str 
     seed_state = read_state(db_path)
     store = InMemoryStore()  # fresh memory per run, pre-filled by the scenario
     memory.seed(store, DEFAULT_TREASURER, scenario.get("memory_seed", {}))
+    client.set_failure(scenario.get("inject_failure"))  # bonus: fault injection, off by default
     app = build_graph(client=client, chat=chat, checkpointer=InMemorySaver(), store=store)
     run_id = f"{scenario['id']}#{repeat}"
     config = run_config(f"eval-{run_id}", DEFAULT_TREASURER, scenario["max_steps"], model)
