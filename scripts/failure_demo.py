@@ -31,7 +31,7 @@ from backend.reset import reset  # noqa: E402
 from backend.state import read_state  # noqa: E402
 
 DB = ROOT / "data" / "failure_demo.db"
-TASK = "Paie la facture E-001 de Voiles Atlantique."
+TASK = "Pay invoice E-001 from Voiles Atlantique."
 EXPENSE = {"expense_id": "E-001"}
 
 

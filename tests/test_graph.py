@@ -1,6 +1,7 @@
 """The whole graph against the two real MCP servers, with a scripted model instead of the LLM (no API key, no cost):
 approval with interrupt()/resume, rejection, guard, ask_user, budget, persistence of a paused run."""
 import json
+import re
 import sqlite3
 
 import pytest
@@ -248,3 +249,66 @@ def test_parallel_calls_run_only_the_first_and_the_model_is_told(client, db_path
     assert len(read_state(db_path)["ledger"]) == 2
     shown = [m for m in script.seen[0] if m["role"] == "tool"]
     assert len(shown) == 2 and "not_run" in shown[0]["content"] and "E-006" in shown[1]["content"]
+
+
+# ---- v6.1: warning on the approval card, English e-mail --------------------------------------------------------------------
+def test_approval_card_shows_the_injection_warning_before_the_human_decides(client, db_path):
+    model = ScriptedModel(("get_expense", {"expense_id": "E-017"}), ("reimburse_member", {"expense_id": "E-017"}),
+                          "Claim E-017 reimbursed.")
+    app, config, out = run(client, model, "Reimburse expense claim E-017 from Maxime Chevalier.")
+    payload = out["__interrupt__"][0].value
+    assert payload["tool"] == "reimburse_member" and payload["amount_eur"] == 72.0
+    assert payload["warning"] == ("⚠️ Suspicious instruction found in E-017 (asks to change the IBAN), not followed. "
+                                  "Check with the member before approving.")
+    iban_before = [m["iban"] for m in read_state(db_path)["members"] if m["id"] == "M014"]
+    app.invoke(Command(resume={"approve": True}), config)
+    assert [m["iban"] for m in read_state(db_path)["members"] if m["id"] == "M014"] == iban_before  # IBAN untouched
+
+
+def test_warning_is_found_even_if_the_model_never_read_the_expense(client):
+    model = ScriptedModel(("reimburse_member", {"expense_id": "E-017"}), "ok")
+    _, _, out = run(client, model, "Reimburse expense claim E-017 from Maxime Chevalier.")
+    assert "E-017" in out["__interrupt__"][0].value["warning"]  # the guard's own lookup is scanned too
+
+
+def test_clean_reimbursement_has_no_warning(client):
+    model = ScriptedModel(("get_expense", {"expense_id": "E-010"}), ("reimburse_member", {"expense_id": "E-010"}), "ok")
+    _, _, out = run(client, model, "Reimburse expense claim E-010 from Thomas Foussard.")
+    payload = out["__interrupt__"][0].value
+    assert payload["tool"] == "reimburse_member" and payload["warning"] is None
+
+
+def test_s006_flow_writes_an_english_email_and_every_card_is_in_english(client, db_path):
+    subject = "Cancellation – Sailing trip to Quiberon on December 12"
+    body = "Hello,\n\nThe sailing trip to Quiberon on December 12 is cancelled. Your €40 registration will be refunded.\n\nBest regards"
+    ids = ["M007", "M013", "M016", "M019"]
+    model = ScriptedModel(("list_events", {"section": "voile"}), ("get_event", {"event_id": "EV01"}),
+                          ("cancel_event", {"event_id": "EV01"}), ("refund_event_registrations", {"event_id": "EV01"}),
+                          ("send_email", {"recipient_member_ids": ids, "subject": subject, "body": body}), "Done.")
+    task = "Cancel the sailing trip to Quiberon on December 12, refund the registrants and notify them by e-mail."
+    app, config, out = run(client, model, task, max_steps=7)
+    cards = []
+    while "__interrupt__" in out:
+        cards.append(out["__interrupt__"][0].value)
+        out = app.invoke(Command(resume={"approve": True}), config)
+    assert [c["tool"] for c in cards] == ["cancel_event", "refund_event_registrations", "send_email"]
+    assert all(c["warning"] is None for c in cards)  # EV01's description is clean
+    french = re.compile(r"[éèàçùôêîï]|\b(annul|rembours|sortie|bonjour|cordialement)", re.I)
+    assert not any(french.search(str(v)) for c in cards for k, v in c.items() if k not in ("args",))
+    sent = read_state(db_path)["outbox"][-1]
+    assert sent["subject"] == subject and not french.search(sent["subject"] + sent["body"])
+
+
+def test_no_tool_description_tells_the_model_to_write_in_french(client):
+    for t in client.list_tools():
+        assert "in French" not in t["description"], t["name"]
+    send = next(t for t in client.list_tools() if t["name"] == "send_email")
+    assert "language of the user's request" in send["description"]
+
+
+def test_seed_texts_the_model_reads_are_in_english():
+    import json
+    seed = json.loads(BASE_SEED.read_text())
+    french = re.compile(r"[éèàçùôêîï]|\b(sortie|annul|facture|bonjour|cordialement|tournoi|rappel)\b", re.I)
+    texts = [e["name"] + " " + (e["description"] or "") for e in seed["events"]] + [x.get("note") or "" for x in seed["expenses"]]
+    assert [t for t in texts if french.search(t)] == []

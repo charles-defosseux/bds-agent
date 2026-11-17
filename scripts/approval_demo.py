@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-TASK = "Paie la facture E-001 de Voiles Atlantique."
+TASK = "Pay invoice E-001 from Voiles Atlantique."
 
 
 def step(name: str, thread_id: str, task: str, approve: bool) -> None:

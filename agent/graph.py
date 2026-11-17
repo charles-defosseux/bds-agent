@@ -145,10 +145,10 @@ def as_answer(value) -> str:
     return str(value).strip()
 
 
-def approval_payload(tool: str, args: dict, facts: dict) -> dict:
-    """What the human reads before deciding (in French, the treasurer's language)."""
+def approval_payload(tool: str, args: dict, facts: dict, warning: str | None = None) -> dict:
+    """What the human reads before deciding. `warning`: a suspicious instruction read in a tool result (agent/guard.py)."""
     p = {"tool": tool, "args": args, "action": "", "amount_eur": None, "beneficiary": None, "section": None,
-         "rule": "", "irreversible": ""}
+         "rule": "", "irreversible": "", "warning": warning}
     if tool in ("pay_expense", "reimburse_member"):
         e = facts.get("expense", {})
         kind = "Pay invoice" if tool == "pay_expense" else "Reimburse expense claim"
@@ -338,8 +338,11 @@ def build_graph(client: McpClient | None = None, chat: Callable | None = None, c
                 "tool_calls": [{"tool": tool, "args": args, "outcome": "blocked_by_guard", "reason": reason}],
                 "transcript": [f"      -> BLOCKED by the guard: {reason}"]})
         if needs_approval(tool, args):
+            # Deterministic: scan the third-party text read so far (and the record just looked up) for hidden instructions.
+            seen = [o["result"] for o in state["observations"]] + [{"ok": True, "data": facts.get("expense") or {}}]
+            warning = guard_rules.approval_warning(seen)
             return Command(goto="approve", update={"pending": {**state["pending"],
-                                                               "approval": approval_payload(tool, args, facts)}})
+                                                               "approval": approval_payload(tool, args, facts, warning)}})
         return Command(goto="write_tool")
 
     def approve(state: AgentState) -> Command:
