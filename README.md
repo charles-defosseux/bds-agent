@@ -24,7 +24,7 @@ Python ≥ 3.12, library versions aligned with the course lab (`pyproject.toml`,
 ## Commands
 
 ```bash
-uv run pytest                                                                      # 342 tests, no API key or network needed
+uv run pytest                                                                      # 352 tests, no API key or network needed
 uv run python eval/run_eval.py --scenarios eval/scenarios.jsonl --out eval/        # instructor's command: 30 scenarios -> eval/results.jsonl
 uv run python eval/report.py                                                       # eval/results.jsonl -> eval/report.md
 uv run python eval/run_eval.py --scenarios eval/scenarios.jsonl --out eval/ --only s002   # a single scenario
