@@ -24,6 +24,8 @@ uv run python -m backend.reset seeds/base.json            # terminal 2: clean de
 uv run langgraph dev                                      # Studio: open the URL shown in the terminal
 ```
 
+Optional UI: `uv run streamlit run ui/app.py` (sidebar: budgets + Reset demo data; 6 example buttons that only fill the text box, meant to be run in order after one reset). Studio below remains the documented fallback.
+
 Checks: Phoenix answers on http://localhost:6006; Studio shows the `agent` graph; `.env` is filled in
 (never show it on screen). Open in tabs beforehand: `eval/report.md`, `docs/ERROR_ANALYSIS.md`.
 Bookmark the traces to show in Phoenix (ids below). Close notifications.
