@@ -1,0 +1,13 @@
+# Light theme with the defence-slides identity (navy / paper / sand / orange). Fonts and details: ui/app.py (injected CSS).
+[theme]
+base = "light"
+primaryColor = "#F2762E"
+backgroundColor = "#F6F4EE"
+secondaryBackgroundColor = "#ECE6D8"
+textColor = "#13213A"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

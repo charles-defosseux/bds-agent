@@ -30,7 +30,8 @@ uv run python eval/report.py                                                    
 uv run python eval/run_eval.py --scenarios eval/scenarios.jsonl --out eval/ --only s002   # a single scenario
 uv run phoenix serve                                                               # traces: http://localhost:6006 (project bds-agent)
 uv run python -m backend.reset seeds/base.json                                     # reset the demo database
-uv run streamlit run ui/app.py                                                     # small demo UI: plan, tool calls, approval step
+uv run python scripts/demo.py                                                      # recommended demo launch: Phoenix + UI, Ctrl+C stops both
+uv run streamlit run ui/app.py                                                     # small demo UI (alone): plan, tool calls, approval step
 uv run langgraph dev                                                               # LangGraph Studio (demo UI, fallback)
 uv run python scripts/approval_demo.py                                             # pause -> process stop -> resume in another process
 uv run python scripts/failure_demo.py                                              # injected failure: a single payment (scripted model)
@@ -160,7 +161,7 @@ Campaigns v1 to v5.2 were run with French tasks, v6 with English tasks (same sce
    Archive: `eval/runs/v4_model2/`.
 2. **Injected tool failure** (`inject_failure`, `scripts/failure_demo.py`): the response of `pay_expense` is lost after the write;
    the same idempotency key is replayed, a single ledger row.
-3. **Demo UI**: `uv run streamlit run ui/app.py` (timeline, approval card, `ask_user`, budgets); LangGraph Studio (`langgraph.json`, `studio.py`) stays the documented fallback.
+3. **Demo UI**: `uv run python scripts/demo.py` (recommended: starts Phoenix and the UI, Ctrl+C stops both; or `uv run streamlit run ui/app.py` alone) (timeline, approval card, `ask_user`, budgets); LangGraph Studio (`langgraph.json`, `studio.py`) stays the documented fallback.
 
 ## Known limits
 
